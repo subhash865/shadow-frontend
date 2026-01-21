@@ -10,6 +10,7 @@ api.interceptors.request.use(
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      config.headers['x-auth-token'] = token; // Backend expects this header
     }
     return config;
   },
@@ -22,12 +23,12 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('adminClassId');
-        
-        if (window.location.pathname.startsWith('/admin')) {
-            window.location.href = '/admin/login';
-        }
+      localStorage.removeItem('token');
+      localStorage.removeItem('adminClassId');
+
+      if (window.location.pathname.startsWith('/admin')) {
+        window.location.href = '/admin/login';
+      }
     }
     return Promise.reject(error);
   }

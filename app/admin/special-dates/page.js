@@ -4,9 +4,11 @@ import { useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
 import Calendar from '@/app/components/Calendar';
 import api from '@/utils/api';
+import { useNotification } from '@/app/components/Notification';
 
 export default function SpecialDates() {
     const router = useRouter();
+    const notify = useNotification();
     const [classId, setClassId] = useState('');
     const [loading, setLoading] = useState(true);
     const [className, setClassName] = useState('');
@@ -47,14 +49,14 @@ export default function SpecialDates() {
     const handleDateClick = (date) => {
         const today = new Date().toISOString().split('T')[0];
         if (date < today) {
-            alert("You can only mark current or future dates");
+            notify({ message: "You can only mark current or future dates", type: 'error' });
             return;
         }
 
         // Check if date already marked
         const existing = specialDates.find(sd => sd.date.split('T')[0] === date);
         if (existing) {
-            alert(`This date is already marked as ${existing.type}: ${existing.title}`);
+            notify({ message: `This date is already marked as ${existing.type}: ${existing.title}`, type: 'error' });
             return;
         }
 
@@ -66,7 +68,7 @@ export default function SpecialDates() {
 
     const handleSave = async () => {
         if (!modalTitle.trim()) {
-            alert("Please enter a title");
+            notify({ message: "Please enter a title", type: 'error' });
             return;
         }
 
@@ -81,7 +83,7 @@ export default function SpecialDates() {
             setShowModal(false);
             loadSpecialDates(classId);
         } catch (err) {
-            alert("Failed to save special date");
+            notify({ message: "Failed to save special date", type: 'error' });
             console.error(err);
         }
     };
@@ -93,7 +95,7 @@ export default function SpecialDates() {
             await api.delete(`/special-dates/${id}`);
             loadSpecialDates(classId);
         } catch (err) {
-            alert("Failed to delete");
+            notify({ message: "Failed to delete", type: 'error' });
             console.error(err);
         }
     };

@@ -141,6 +141,11 @@ export default function AdminDashboard() {
             loadAttendanceForDate(selectedDate, classId);
             checkIfPastDate(selectedDate);
             setShowCalendar(false); // Close calendar after selection
+
+            // Update todayName to match selected date
+            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            const selectedDayName = days[new Date(selectedDate + 'T00:00:00').getDay()];
+            setTodayName(selectedDayName);
         }
     }, [selectedDate]); // Only depend on selectedDate, not classId or defaultTimetable
 

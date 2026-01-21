@@ -3,9 +3,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from './components/Navbar';
 import api from '@/utils/api';
+import { useNotification } from './components/Notification';
 
 export default function Home() {
     const router = useRouter();
+    const notify = useNotification();
     const [className, setClassName] = useState('');
     const [rollNumber, setRollNumber] = useState('');
     const [loading, setLoading] = useState(false);
@@ -33,7 +35,7 @@ export default function Home() {
 
             router.push(`/student/${classId}/${rollNumber}`);
         } catch (err) {
-            alert("Class not found! Check the name.");
+            notify({ message: "Class not found! Check the name.", type: 'error' });
             setLoading(false);
         }
     };
@@ -77,7 +79,7 @@ export default function Home() {
                 <div className="mt-6 flex flex-col gap-2">
                     <p className="text-center text-sm">Are you a representative?</p>
                     <button
-                        onClick={() => router.push('/admin/create')}
+                        onClick={() => router.push('/admin/setup')}
                         className="btn btn-outline"
                     >
                         Create New Class

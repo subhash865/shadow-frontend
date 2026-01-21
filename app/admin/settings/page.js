@@ -3,9 +3,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
+import { useNotification } from '@/app/components/Notification';
 
 export default function AdminSettings() {
     const router = useRouter();
+    const notify = useNotification();
     const [loading, setLoading] = useState(true);
     const [classId, setClassId] = useState(null);
     const [className, setClassName] = useState('');
@@ -60,9 +62,9 @@ export default function AdminSettings() {
 
         try {
             await api.put('/class/update-settings', { classId, settings });
-            alert('Settings saved successfully! ✅');
+            notify({ message: 'Settings saved successfully!', type: 'success' });
         } catch (err) {
-            alert('Failed to save settings ❌');
+            notify({ message: 'Failed to save settings', type: 'error' });
             console.error(err);
         } finally {
             setSaving(false);

@@ -3,9 +3,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
+import { useNotification } from '@/app/components/Notification';
 
 export default function AdminLogin() {
     const router = useRouter();
+    const notify = useNotification();
     const [className, setClassName] = useState('');
     const [adminPin, setAdminPin] = useState('');
     const [loading, setLoading] = useState(false);
@@ -16,19 +18,19 @@ export default function AdminLogin() {
 
         try {
             const res = await api.post('/class/admin-login', { className, adminPin });
-            
+
             // SAVE THE TOKEN AND CLASS ID
             localStorage.setItem('adminClassId', res.data.classId);
             localStorage.setItem('token', res.data.token); // <--- NEW LINE
-            
+
             router.push('/admin/dashboard');
         } catch (err) {
             if (err.response?.status === 401) {
-                alert('Invalid PIN! ❌');
+                notify({ message: 'Invalid PIN!', type: 'error' });
             } else if (err.response?.status === 404) {
-                alert('Class not found! ❌');
+                notify({ message: 'Class not found!', type: 'error' });
             } else {
-                alert('Login failed! ❌');
+                notify({ message: 'Login failed!', type: 'error' });
             }
             setLoading(false);
         }

@@ -4,11 +4,13 @@ import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
 import Calendar from '@/app/components/Calendar';
 import api from '@/utils/api';
+import { useNotification } from '@/app/components/Notification';
 
 export default function BunkEffect() {
     const params = useParams();
     const { classId, rollNumber } = params;
     const router = useRouter();
+    const notify = useNotification();
     const [loading, setLoading] = useState(true);
     const [className, setClassName] = useState('');
     const [subjects, setSubjects] = useState([]);
@@ -48,7 +50,7 @@ export default function BunkEffect() {
 
     const calculateImpact = async () => {
         if (selectedDates.length === 0) {
-            alert("Please select at least one date!");
+            notify({ message: "Please select at least one date!", type: 'error' });
             return;
         }
 
@@ -61,7 +63,7 @@ export default function BunkEffect() {
             });
             setImpactData(res.data);
         } catch (err) {
-            alert("Failed to calculate impact");
+            notify({ message: "Failed to calculate impact", type: 'error' });
             console.error(err);
         } finally {
             setCalculating(false);

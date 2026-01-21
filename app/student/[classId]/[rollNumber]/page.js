@@ -3,12 +3,14 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
+import { useNotification } from '@/app/components/Notification';
 
 export default function StudentDashboard() {
   const params = useParams();
   const { classId, rollNumber } = params;
   const router = useRouter();
-  
+  const notify = useNotification();
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -28,7 +30,7 @@ export default function StudentDashboard() {
       })
       .catch(err => {
         console.error("Fetch Error:", err);
-        alert("Student not found or Server Error");
+        notify({ message: "Student not found or Server Error", type: 'error' });
         setLoading(false);
       });
   }, [classId, rollNumber]);
@@ -50,7 +52,7 @@ export default function StudentDashboard() {
       const res = await api.get(`/student/history/${classId}/${rollNumber}/${subjectId}`);
       setHistoryData(res.data.history);
     } catch (err) {
-      alert("Failed to load history");
+      notify({ message: "Failed to load history", type: 'error' });
       setHistoryModal(false);
     } finally {
       setHistoryLoading(false);
@@ -103,7 +105,7 @@ export default function StudentDashboard() {
                 </p>
 
                 {/* New View History Button */}
-                <button 
+                <button
                   onClick={() => fetchHistory(sub._id, sub.subjectName)}
                   className="w-full py-2 rounded-md border border-[var(--border)] text-sm text-[var(--text-dim)] hover:text-white hover:border-white transition-colors"
                 >
@@ -118,11 +120,11 @@ export default function StudentDashboard() {
         {historyModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
             <div className="bg-[#0a0a0a] border border-[#333] w-full max-w-md rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
-              
+
               {/* Modal Header */}
               <div className="p-4 border-b border-[#333] flex justify-between items-center bg-[#0a0a0a]">
                 <h3 className="font-bold text-lg">{selectedSubject} History</h3>
-                <button 
+                <button
                   onClick={() => setHistoryModal(false)}
                   className="text-[var(--text-dim)] hover:text-white text-xl leading-none"
                 >
@@ -141,17 +143,16 @@ export default function StudentDashboard() {
                     {historyData.map((record, i) => (
                       <div key={i} className="flex justify-between items-center p-3 rounded bg-[#111] border border-[#222]">
                         <span className="text-sm text-gray-300">
-                          {new Date(record.date).toLocaleDateString('en-US', { 
-                            weekday: 'short', 
-                            month: 'short', 
-                            day: 'numeric' 
+                          {new Date(record.date).toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric'
                           })}
                         </span>
-                        <span className={`text-sm font-medium px-2 py-0.5 rounded ${
-                          record.status === 'Present' 
-                            ? 'text-green-400 bg-green-400/10' 
+                        <span className={`text-sm font-medium px-2 py-0.5 rounded ${record.status === 'Present'
+                            ? 'text-green-400 bg-green-400/10'
                             : 'text-red-400 bg-red-400/10'
-                        }`}>
+                          }`}>
                           {record.status}
                         </span>
                       </div>
@@ -159,10 +160,10 @@ export default function StudentDashboard() {
                   </div>
                 )}
               </div>
-              
+
               {/* Modal Footer */}
               <div className="p-4 border-t border-[#333] bg-[#0a0a0a]">
-                <button 
+                <button
                   onClick={() => setHistoryModal(false)}
                   className="w-full py-3 bg-white text-black font-medium rounded-full active:scale-95 transition-transform"
                 >
