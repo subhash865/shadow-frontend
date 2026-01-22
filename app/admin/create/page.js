@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Trash2, Plus, Calendar, Save, X, BookOpen, Settings2 } from 'lucide-react';
+import { Trash2, Plus, Calendar, Save, X, BookOpen, Settings2, Edit2 } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
 import { useNotification } from '@/app/components/Notification';
