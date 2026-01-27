@@ -20,6 +20,7 @@ export default function AdminDashboard() {
     const [isEditing, setIsEditing] = useState(false);
     const [subjects, setSubjects] = useState([]);
     const [absentees, setAbsentees] = useState({});
+    const [absentInputs, setAbsentInputs] = useState({}); // Track raw input text
     const [showCalendar, setShowCalendar] = useState(false);
     const [attendanceDates, setAttendanceDates] = useState([]);
     const [hasModifications, setHasModifications] = useState(false);
@@ -47,12 +48,15 @@ export default function AdminDashboard() {
                 }));
 
                 const newAbsentees = {};
+                const newAbsentInputs = {};
                 res.data.periods.forEach((period, index) => {
                     newAbsentees[index] = period.absentRollNumbers || [];
+                    newAbsentInputs[index] = (period.absentRollNumbers || []).sort((a, b) => a - b).join(', ');
                 });
 
                 setTimetable(formattedTimetable);
                 setAbsentees(newAbsentees);
+                setAbsentInputs(newAbsentInputs);
                 setHasModifications(false);
 
                 // Set last modified time
@@ -79,6 +83,7 @@ export default function AdminDashboard() {
                 });
                 setTimetable(formattedTimetable);
                 setAbsentees({});
+                setAbsentInputs({});
                 setHasModifications(false);
                 setLastModified(null);
             }
@@ -105,6 +110,7 @@ export default function AdminDashboard() {
                 setTimetable([]);
             }
             setAbsentees({});
+            setAbsentInputs({});
             setHasModifications(false);
             setLastModified(null);
         }
@@ -148,6 +154,10 @@ export default function AdminDashboard() {
                 setTimetable(formattedTimetable);
                 setDefaultTimetable(formattedTimetable); // Store as default
                 setLoading(false);
+
+                // IMPROVED: Immediately load attendance for today if exists
+                // This prevents the "empty inputs" flash or state mismatch
+                loadAttendanceForDate(today, storedClassId);
 
                 // Fetch list of dates with attendance
                 api.get(`/attendance/dates/${storedClassId}`)
@@ -219,12 +229,28 @@ export default function AdminDashboard() {
     };
 
     const removePeriod = (periodNum) => {
-        setTimetable(timetable.filter(p => p.period !== periodNum));
-        setAbsentees(prev => {
-            const updated = { ...prev };
-            delete updated[timetable.findIndex(p => p.period === periodNum)];
+        const indexToRemove = timetable.findIndex(p => p.period === periodNum);
+        if (indexToRemove === -1) return;
+
+        setTimetable(prev => prev.filter(p => p.period !== periodNum));
+
+        const shiftState = (prev) => {
+            const updated = {};
+            Object.keys(prev).forEach(key => {
+                const k = parseInt(key, 10);
+                if (isNaN(k)) return;
+
+                if (k < indexToRemove) {
+                    updated[k] = prev[k];
+                } else if (k > indexToRemove) {
+                    updated[k - 1] = prev[k];
+                }
+            });
             return updated;
-        });
+        };
+
+        setAbsentees(shiftState);
+        setAbsentInputs(shiftState);
         setHasModifications(true);
     };
 
@@ -241,12 +267,45 @@ export default function AdminDashboard() {
     const toggleAbsent = (periodIdx, rollNo) => {
         setAbsentees(prev => {
             const currentList = prev[periodIdx] || [];
+            let newList;
             if (currentList.includes(rollNo)) {
-                return { ...prev, [periodIdx]: currentList.filter(r => r !== rollNo) };
+                newList = currentList.filter(r => r !== rollNo);
             } else {
-                return { ...prev, [periodIdx]: [...currentList, rollNo] };
+                newList = [...currentList, rollNo];
             }
+
+            // Sync the input text as well
+            setAbsentInputs(prevInputs => ({
+                ...prevInputs,
+                [periodIdx]: newList.sort((a, b) => a - b).join(', ')
+            }));
+
+            return { ...prev, [periodIdx]: newList };
         });
+        setHasModifications(true);
+    };
+
+    const handleBulkAbsentInput = (periodIdx, inputValue) => {
+        // Store the raw input value
+        setAbsentInputs(prev => ({ ...prev, [periodIdx]: inputValue }));
+
+        if (!inputValue.trim()) {
+            // Clear all if empty
+            setAbsentees(prev => ({ ...prev, [periodIdx]: [] }));
+            setHasModifications(true);
+            return;
+        }
+
+        // Parse comma-separated values
+        const rollNumbers = inputValue
+            .split(',')
+            .map(str => parseInt(str.trim()))
+            .filter(num => !isNaN(num) && num >= 1 && num <= classStrength); // Validate range
+
+        // Remove duplicates
+        const uniqueRolls = [...new Set(rollNumbers)];
+
+        setAbsentees(prev => ({ ...prev, [periodIdx]: uniqueRolls }));
         setHasModifications(true);
     };
 
@@ -272,7 +331,13 @@ export default function AdminDashboard() {
 
             // Refresh attendance dates list
             api.get(`/attendance/dates/${classId}`)
-                .then(datesRes => setAttendanceDates(datesRes.data.dates || []))
+                .then(datesRes => {
+                    // Convert ISO strings to YYYY-MM-DD format for calendar comparison
+                    const formattedDates = (datesRes.data.dates || []).map(dateStr => {
+                        return new Date(dateStr).toISOString().split('T')[0];
+                    });
+                    setAttendanceDates(formattedDates);
+                })
                 .catch(err => console.log("Failed to refresh dates"));
 
             // Reload the attendance for current date to show saved data
@@ -463,6 +528,23 @@ export default function AdminDashboard() {
                                             </button>
                                         )}
                                     </div>
+                                </div>
+
+                                {/* Bulk input for absent roll numbers */}
+                                <div className="mb-3">
+                                    <label className="text-xs text-[var(--text-dim)] block mb-1.5">
+                                        Mark Absent (comma-separated roll numbers)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g., 1, 5, 12, 23"
+                                        value={absentInputs[index] || ''}
+                                        onChange={(e) => handleBulkAbsentInput(index, e.target.value)}
+                                        className="input w-full text-sm"
+                                    />
+                                    <p className="text-xs text-[var(--text-dim)] mt-1">
+                                        {(absentees[index] || []).length} student(s) marked absent
+                                    </p>
                                 </div>
 
                                 <div className="grid grid-cols-7 gap-2">
