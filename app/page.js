@@ -118,6 +118,12 @@ export default function Home() {
                         >
                             Admin Login
                         </button>
+                        <button
+                            onClick={() => router.push('/teacher/login')}
+                            className="btn btn-outline"
+                        >
+                            Teacher Login
+                        </button>
                     </div>
                 </div>
 

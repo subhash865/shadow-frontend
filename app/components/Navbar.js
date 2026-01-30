@@ -1,13 +1,13 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-export default function Navbar({ isAdmin = false, isStudent = false, onLogout, onReportClick, classId, rollNumber }) {
+export default function Navbar({ isAdmin = false, isStudent = false, isTeacher = false, onLogout, onReportClick, classId, rollNumber }) {
     const [isOpen, setIsOpen] = useState(false);
     const [navClassId, setNavClassId] = useState(classId);
 
     // Load classId from localStorage for admins if not provided via props
-    useState(() => {
+    useEffect(() => {
         if (typeof window !== 'undefined' && isAdmin && !classId) {
             const stored = localStorage.getItem('adminClassId');
             if (stored) setNavClassId(stored);
@@ -15,7 +15,7 @@ export default function Navbar({ isAdmin = false, isStudent = false, onLogout, o
     }, [isAdmin, classId]);
 
     // Keep state in sync if prop changes
-    useState(() => {
+    useEffect(() => {
         if (classId) setNavClassId(classId);
     }, [classId]);
 
@@ -27,7 +27,7 @@ export default function Navbar({ isAdmin = false, isStudent = false, onLogout, o
                     SHADOW
                 </Link>
 
-                {(isAdmin || isStudent) && (
+                {(isAdmin || isStudent || isTeacher) && (
                     <button
                         onClick={() => setIsOpen(!isOpen)}
                         className="flex flex-col gap-1 p-2"
@@ -49,6 +49,9 @@ export default function Navbar({ isAdmin = false, isStudent = false, onLogout, o
                             <Link href="/admin/timetable" onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
                                 Edit Timetable
                             </Link>
+                            <Link href="/admin/teachers" onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
+                                Teachers
+                            </Link>
                             <Link href="/admin/settings" onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
                                 Settings
                             </Link>
@@ -60,6 +63,18 @@ export default function Navbar({ isAdmin = false, isStudent = false, onLogout, o
                                     Reports
                                 </Link>
                             )}
+                            <button onClick={() => { onLogout?.(); setIsOpen(false); }} className="text-sm text-[var(--danger-text)] hover:text-red-400 text-left transition">
+                                Logout
+                            </button>
+                        </>
+                    ) : isTeacher ? (
+                        <>
+                            <Link href="/teacher/dashboard" onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
+                                Dashboard
+                            </Link>
+                            <Link href="/teacher/settings" onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
+                                Settings
+                            </Link>
                             <button onClick={() => { onLogout?.(); setIsOpen(false); }} className="text-sm text-[var(--danger-text)] hover:text-red-400 text-left transition">
                                 Logout
                             </button>

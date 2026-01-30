@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Edit, Save, Plus, X, Calendar as CalendarIcon } from 'lucide-react';
+import { Edit, Save, Plus, X, Calendar as CalendarIcon, CheckCircle, ShieldAlert } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
 import Calendar from '@/app/components/Calendar';
 import api from '@/utils/api';
@@ -21,6 +21,8 @@ export default function AdminDashboard() {
     const [subjects, setSubjects] = useState([]);
     const [absentees, setAbsentees] = useState({});
     const [absentInputs, setAbsentInputs] = useState({}); // Track raw input text
+    const [verificationCodes, setVerificationCodes] = useState({}); // Track teacher codes
+    const [verificationStatuses, setVerificationStatuses] = useState({}); // Track verification status
     const [showCalendar, setShowCalendar] = useState(false);
     const [attendanceDates, setAttendanceDates] = useState([]);
     const [hasModifications, setHasModifications] = useState(false);
@@ -49,14 +51,19 @@ export default function AdminDashboard() {
 
                 const newAbsentees = {};
                 const newAbsentInputs = {};
+                const newVerificationStatuses = {};
+
                 res.data.periods.forEach((period, index) => {
                     newAbsentees[index] = period.absentRollNumbers || [];
                     newAbsentInputs[index] = (period.absentRollNumbers || []).sort((a, b) => a - b).join(', ');
+                    newVerificationStatuses[index] = period.isVerified;
                 });
 
                 setTimetable(formattedTimetable);
                 setAbsentees(newAbsentees);
                 setAbsentInputs(newAbsentInputs);
+                setVerificationStatuses(newVerificationStatuses);
+                setVerificationCodes({}); // Reset codes input
                 setHasModifications(false);
 
                 // Set last modified time
@@ -84,6 +91,8 @@ export default function AdminDashboard() {
                 setTimetable(formattedTimetable);
                 setAbsentees({});
                 setAbsentInputs({});
+                setVerificationStatuses({});
+                setVerificationCodes({});
                 setHasModifications(false);
                 setLastModified(null);
             }
@@ -111,6 +120,8 @@ export default function AdminDashboard() {
             }
             setAbsentees({});
             setAbsentInputs({});
+            setVerificationStatuses({});
+            setVerificationCodes({});
             setHasModifications(false);
             setLastModified(null);
         }
@@ -251,6 +262,8 @@ export default function AdminDashboard() {
 
         setAbsentees(shiftState);
         setAbsentInputs(shiftState);
+        setVerificationStatuses(shiftState);
+        setVerificationCodes(shiftState);
         setHasModifications(true);
     };
 
@@ -309,6 +322,11 @@ export default function AdminDashboard() {
         setHasModifications(true);
     };
 
+    const handleVerificationCodeInput = (periodIdx, value) => {
+        setVerificationCodes(prev => ({ ...prev, [periodIdx]: value }));
+        setHasModifications(true);
+    };
+
     const submitAttendance = async () => {
         if (!classId) return;
 
@@ -316,11 +334,12 @@ export default function AdminDashboard() {
             periodNum: slot.period,
             subjectId: slot.subjectId,
             subjectName: slot.subjectName,
-            absentRollNumbers: absentees[index] || []
+            absentRollNumbers: absentees[index] || [],
+            verificationCode: verificationCodes[index] || ""
         }));
 
         try {
-            await api.post('/attendance/mark', {
+            const res = await api.post('/attendance/mark', {
                 classId: classId,
                 date: selectedDate,
                 periods: formattedPeriods
@@ -329,10 +348,12 @@ export default function AdminDashboard() {
             setIsEditing(false);
             setHasModifications(false);
 
+            // Refetch to get updated statuses (like verification)
+            loadAttendanceForDate(selectedDate, classId);
+
             // Refresh attendance dates list
             api.get(`/attendance/dates/${classId}`)
                 .then(datesRes => {
-                    // Convert ISO strings to YYYY-MM-DD format for calendar comparison
                     const formattedDates = (datesRes.data.dates || []).map(dateStr => {
                         return new Date(dateStr).toISOString().split('T')[0];
                     });
@@ -340,8 +361,6 @@ export default function AdminDashboard() {
                 })
                 .catch(err => console.log("Failed to refresh dates"));
 
-            // Reload the attendance for current date to show saved data
-            loadAttendanceForDate(selectedDate, classId);
         } catch (err) {
             notify({ message: "Failed to save attendance", type: 'error' });
         }
@@ -497,25 +516,52 @@ export default function AdminDashboard() {
                             <div key={index} className="card mb-4">
 
                                 <div className="flex justify-between items-center mb-4 pb-3 border-b border-[var(--border)]">
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-lg font-bold text-[var(--text-dim)]">P{slot.period}</span>
-                                        {isEditing ? (
-                                            <select
-                                                className="input w-auto min-w-[150px]"
-                                                value={slot.subjectId}
-                                                onChange={(e) => updatePeriod(slot.period, e.target.value)}
-                                            >
-                                                <option value="">-- Select --</option>
-                                                {subjects.map(sub => (
-                                                    <option key={sub._id} value={sub._id}>{sub.name}</option>
-                                                ))}
-                                            </select>
-                                        ) : (
-                                            <h2 className="text-lg font-semibold">{slot.subjectName}</h2>
+                                    <div className="flex flex-col gap-1 w-full mr-4">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-lg font-bold text-[var(--text-dim)]">P{slot.period}</span>
+                                            {isEditing ? (
+                                                <select
+                                                    className="input w-auto min-w-[150px]"
+                                                    value={slot.subjectId}
+                                                    onChange={(e) => updatePeriod(slot.period, e.target.value)}
+                                                >
+                                                    <option value="">-- Select --</option>
+                                                    {subjects.map(sub => (
+                                                        <option key={sub._id} value={sub._id}>{sub.name}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <div className="flex items-center gap-2">
+                                                    <h2 className="text-lg font-semibold">{slot.subjectName}</h2>
+                                                    {verificationStatuses[index] && (
+                                                        <CheckCircle className="w-4 h-4 text-green-400" />
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Teacher Code Input */}
+                                        {!isEditing && (
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Teacher Code"
+                                                    className={`bg-white/5 border border-white/10 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:border-blue-500 transition ${verificationStatuses[index] ? 'opacity-50' : ''}`}
+                                                    value={verificationCodes[index] || ""}
+                                                    onChange={(e) => handleVerificationCodeInput(index, e.target.value)}
+                                                    disabled={!!verificationStatuses[index]} // Disable if already verified? Maybe allow edit if code was wrong? But if verified, keep it.
+                                                />
+                                                {verificationStatuses[index] ? (
+                                                    <span className="text-xs text-green-400 flex items-center gap-1">
+                                                        Verified
+                                                    </span>
+                                                ) : (
+                                                    verificationCodes[index] && <span className="text-xs text-[var(--text-dim)]">Pending</span>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
 
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-shrink-0">
                                         <span className={`px-3 py-1 rounded-md text-sm font-semibold ${(absentees[index] || []).length > 0
                                             ? 'bg-[var(--danger)] text-[var(--danger-text)]'
                                             : 'bg-[var(--success)] text-[var(--success-text)]'
