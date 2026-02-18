@@ -1,92 +1,118 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import {
+    LayoutDashboard, Calendar, Settings, FileText,
+    AlertTriangle, LogOut, Zap, BookOpen, Flag, Menu, X
+} from 'lucide-react';
 
 export default function Navbar({ isAdmin = false, isStudent = false, onLogout, onReportClick, classId, rollNumber }) {
     const [isOpen, setIsOpen] = useState(false);
     const [navClassId, setNavClassId] = useState(classId);
+    const pathname = usePathname();
 
-    // Load classId from localStorage for admins if not provided via props
-    useState(() => {
+    useEffect(() => {
         if (typeof window !== 'undefined' && isAdmin && !classId) {
             const stored = localStorage.getItem('adminClassId');
             if (stored) setNavClassId(stored);
         }
     }, [isAdmin, classId]);
 
-    // Keep state in sync if prop changes
-    useState(() => {
+    useEffect(() => {
         if (classId) setNavClassId(classId);
     }, [classId]);
 
-    return (
-        <nav className="border-b border-[var(--border)] p-4 sticky top-0 bg-black/80 backdrop-blur-md z-50">
-            <div className="max-w-4xl mx-auto flex justify-between items-center">
+    // Close menu on route change
+    useEffect(() => {
+        setIsOpen(false);
+    }, [pathname]);
 
-                <Link href="/" className="text-lg font-bold tracking-tight">
-                    SHADOW
+    const isActive = (href) => pathname === href;
+
+    const NavLink = ({ href, icon: Icon, label, danger = false }) => {
+        const active = isActive(href);
+        return (
+            <Link
+                href={href}
+                onClick={() => setIsOpen(false)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${active
+                    ? 'bg-white/8 text-white'
+                    : danger
+                        ? 'text-red-400 hover:bg-red-500/8'
+                        : 'text-[var(--text-dim)] hover:text-white hover:bg-white/5'
+                    }`}
+            >
+                {Icon && <Icon className="w-4 h-4" />}
+                <span>{label}</span>
+                {active && <div className="w-1.5 h-1.5 rounded-full bg-white ml-auto"></div>}
+            </Link>
+        );
+    };
+
+    const NavButton = ({ onClick, icon: Icon, label, danger = false }) => (
+        <button
+            onClick={() => { onClick?.(); setIsOpen(false); }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-left transition-all ${danger ? 'text-red-400 hover:bg-red-500/8' : 'text-[var(--text-dim)] hover:text-white hover:bg-white/5'
+                }`}
+        >
+            {Icon && <Icon className="w-4 h-4" />}
+            <span>{label}</span>
+        </button>
+    );
+
+    return (
+        <nav className="border-b border-white/6 sticky top-0 z-50 glass">
+            <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
+                {/* Logo */}
+                <Link href="/" className="flex items-center gap-2.5 group">
+                    <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center group-hover:bg-white/15 transition">
+                        <span className="text-xs font-bold">S</span>
+                    </div>
+                    <span className="text-sm font-bold tracking-tight">SHADOW</span>
                 </Link>
 
+                {/* Hamburger */}
                 {(isAdmin || isStudent) && (
                     <button
                         onClick={() => setIsOpen(!isOpen)}
-                        className="flex flex-col gap-1 p-2"
+                        className="w-9 h-9 rounded-lg bg-white/5 border border-white/8 flex items-center justify-center hover:bg-white/10 transition"
                     >
-                        <span className={`w-5 h-0.5 bg-white transition-transform duration-300 ${isOpen ? 'rotate-45 translate-y-1.5' : ''}`}></span>
-                        <span className={`w-5 h-0.5 bg-white transition-opacity duration-300 ${isOpen ? 'opacity-0' : ''}`}></span>
-                        <span className={`w-5 h-0.5 bg-white transition-transform duration-300 ${isOpen ? '-rotate-45 -translate-y-1.5' : ''}`}></span>
+                        {isOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
                     </button>
                 )}
             </div>
 
+            {/* Dropdown menu */}
             {isOpen && (
-                <div className="mt-4 pt-4 border-t border-[var(--border)] flex flex-col gap-3 max-w-4xl mx-auto">
-                    {isAdmin ? (
-                        <>
-                            <Link href="/admin/dashboard" onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
-                                Dashboard
-                            </Link>
-                            <Link href="/admin/timetable" onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
-                                Edit Timetable
-                            </Link>
-                            <Link href="/admin/settings" onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
-                                Settings
-                            </Link>
-                            <Link href="/admin/special-dates" onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
-                                Special Dates
-                            </Link>
-                            {navClassId && (
-                                <Link href={`/admin/reports/${navClassId}`} onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
-                                    Reports
-                                </Link>
-                            )}
-                            <button onClick={() => { onLogout?.(); setIsOpen(false); }} className="text-sm text-[var(--danger-text)] hover:text-red-400 text-left transition">
-                                Logout
-                            </button>
-                        </>
-                    ) : isStudent ? (
-                        <>
-                            <Link href={`/student/${classId}/${rollNumber}`} onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
-                                Dashboard
-                            </Link>
-                            <Link href={`/student/${classId}/${rollNumber}/calendar`} onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
-                                Calendar
-                            </Link>
-                            <Link href={`/student/${classId}/${rollNumber}/bunk-effect`} onClick={() => setIsOpen(false)} className="text-sm text-[var(--text-dim)] hover:text-white transition">
-                                Bunk Effect
-                            </Link>
-                            {onReportClick && (
-                                <button onClick={() => { onReportClick(); setIsOpen(false); }} className="text-sm text-[var(--text-dim)] hover:text-white text-left transition">
-                                    Report Issue
-                                </button>
-                            )}
-                            <button onClick={() => { onLogout?.(); setIsOpen(false); }} className="text-sm text-[var(--danger-text)] hover:text-red-400 text-left transition">
-                                Logout
-                            </button>
-                        </>
-                    ) : (
-                        null
-                    )}
+                <div className="absolute top-full left-0 right-0 glass border-b border-white/6 animate-fade-in">
+                    <div className="max-w-5xl mx-auto px-4 py-3 space-y-0.5">
+                        {isAdmin ? (
+                            <>
+                                <NavLink href="/admin/dashboard" icon={LayoutDashboard} label="Dashboard" />
+                                <NavLink href="/admin/timetable" icon={Calendar} label="Timetable" />
+                                <NavLink href="/admin/settings" icon={Settings} label="Settings" />
+                                <NavLink href="/admin/attention" icon={AlertTriangle} label="Attention" />
+                                {navClassId && (
+                                    <NavLink href={`/admin/reports/${navClassId}`} icon={FileText} label="Reports" />
+                                )}
+                                <div className="border-t border-white/6 my-2"></div>
+                                <NavButton onClick={onLogout} icon={LogOut} label="Logout" danger />
+                            </>
+                        ) : isStudent ? (
+                            <>
+                                <NavLink href={`/student/${classId}/${rollNumber}`} icon={LayoutDashboard} label="Dashboard" />
+                                <NavLink href={`/student/${classId}/${rollNumber}/calendar`} icon={Calendar} label="Calendar" />
+                                <NavLink href={`/student/${classId}/${rollNumber}/bunk-effect`} icon={Zap} label="Bunk Effect" />
+                                <NavLink href={`/student/${classId}/${rollNumber}/attention`} icon={AlertTriangle} label="Announcements" />
+                                {onReportClick && (
+                                    <NavButton onClick={onReportClick} icon={Flag} label="Report Issue" />
+                                )}
+                                <div className="border-t border-white/6 my-2"></div>
+                                <NavButton onClick={onLogout} icon={LogOut} label="Logout" danger />
+                            </>
+                        ) : null}
+                    </div>
                 </div>
             )}
         </nav>

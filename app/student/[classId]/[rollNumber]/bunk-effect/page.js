@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
-import Calendar from '@/app/components/Calendar';
 import api from '@/utils/api';
 import { useNotification } from '@/app/components/Notification';
 
@@ -14,13 +13,15 @@ export default function BunkEffect() {
     const [loading, setLoading] = useState(true);
     const [className, setClassName] = useState('');
     const [subjects, setSubjects] = useState([]);
-    const [selectedDates, setSelectedDates] = useState([]);
-    const [attendanceDates, setAttendanceDates] = useState([]);
-    const [impactData, setImpactData] = useState(null);
-    const [calculating, setCalculating] = useState(false);
+    const [bunkCounts, setBunkCounts] = useState({});
+    const [minPercentage, setMinPercentage] = useState(75);
 
     useEffect(() => {
         if (!classId || !rollNumber) return;
+
+        // Load student's own min percentage from localStorage
+        const saved = localStorage.getItem('studentMinPercentage');
+        if (saved) setMinPercentage(parseInt(saved));
 
         // Fetch current attendance report
         api.get(`/student/report/${classId}/${rollNumber}`)
@@ -31,55 +32,71 @@ export default function BunkEffect() {
             })
             .catch(err => {
                 console.error("Fetch Error:", err);
+                notify({ message: "Failed to load data", type: 'error' });
                 setLoading(false);
             });
-
-        // Fetch attendance dates
-        api.get(`/attendance/dates/${classId}`)
-            .then(res => setAttendanceDates(res.data.dates || []))
-            .catch(err => console.log("No attendance dates"));
     }, [classId, rollNumber]);
-
-    const handleDateToggle = (date) => {
-        if (selectedDates.includes(date)) {
-            setSelectedDates(selectedDates.filter(d => d !== date));
-        } else {
-            setSelectedDates([...selectedDates, date]);
-        }
-    };
-
-    const calculateImpact = async () => {
-        if (selectedDates.length === 0) {
-            notify({ message: "Please select at least one date!", type: 'error' });
-            return;
-        }
-
-        setCalculating(true);
-        try {
-            const res = await api.post('/student/simulate-bunk', {
-                classId,
-                rollNumber: parseInt(rollNumber),
-                dates: selectedDates
-            });
-            setImpactData(res.data);
-        } catch (err) {
-            notify({ message: "Failed to calculate impact", type: 'error' });
-            console.error(err);
-        } finally {
-            setCalculating(false);
-        }
-    };
-
-    const clearSelection = () => {
-        setSelectedDates([]);
-        setImpactData(null);
-    };
 
     const handleLogout = () => {
         localStorage.removeItem('studentClassId');
         localStorage.removeItem('studentRoll');
+        localStorage.removeItem('studentClassName');
         router.push('/');
     };
+
+    const updateBunkCount = (subjectId, value) => {
+        const count = parseInt(value) || 0;
+        setBunkCounts(prev => ({ ...prev, [subjectId]: Math.max(0, count) }));
+    };
+
+    const incrementBunk = (subjectId) => {
+        setBunkCounts(prev => ({ ...prev, [subjectId]: (prev[subjectId] || 0) + 1 }));
+    };
+
+    const decrementBunk = (subjectId) => {
+        setBunkCounts(prev => ({ ...prev, [subjectId]: Math.max(0, (prev[subjectId] || 0) - 1) }));
+    };
+
+    const clearAll = () => {
+        setBunkCounts({});
+    };
+
+    // Calculate impact for a subject
+    const getImpact = (subject) => {
+        const bunkCount = bunkCounts[subject._id] || 0;
+        const afterTotal = subject.total + bunkCount;
+        const afterAttended = subject.attended; // bunking means not attending
+        const afterPercentage = afterTotal === 0 ? 100 : (afterAttended / afterTotal) * 100;
+        const percentDrop = subject.percentage - afterPercentage;
+
+        const isSafe = afterPercentage >= minPercentage + 5;
+        const isDanger = afterPercentage < minPercentage;
+
+        // Calculate max classes you can bunk while staying at minPercentage
+        const maxBunkable = Math.max(0, Math.floor((subject.attended / (minPercentage / 100)) - subject.total));
+
+        // Calculate classes needed to recover if below minimum
+        let classesToRecover = 0;
+        if (afterPercentage < minPercentage && afterTotal > 0) {
+            classesToRecover = Math.ceil(
+                ((minPercentage / 100) * afterTotal - afterAttended) / (1 - (minPercentage / 100))
+            );
+        }
+
+        return {
+            bunkCount,
+            afterTotal,
+            afterAttended,
+            afterPercentage,
+            percentDrop,
+            isSafe,
+            isDanger,
+            maxBunkable,
+            classesToRecover
+        };
+    };
+
+    const totalBunks = Object.values(bunkCounts).reduce((sum, c) => sum + c, 0);
 
     if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
 
@@ -98,121 +115,146 @@ export default function BunkEffect() {
                 <div className="card mb-6 bg-blue-900/10 border-blue-500/30">
                     <h2 className="text-sm font-semibold text-blue-400 mb-2">How it works</h2>
                     <ul className="text-sm text-[var(--text-dim)] space-y-1">
-                        <li>• Select future dates you're planning to bunk</li>
-                        <li>• Click "Calculate Impact" to see how it affects your attendance</li>
-                        <li>• View detailed before/after percentages for each subject</li>
+                        <li>• Set how many classes you plan to bunk for each subject</li>
+                        <li>• See the impact on your attendance percentage instantly</li>
+                        <li>• Minimum attendance threshold: <span className="text-white font-semibold">{minPercentage}%</span></li>
                     </ul>
                 </div>
 
-                {/* Calendar */}
-                <div className="mb-6">
-                    <h2 className="text-sm uppercase text-[var(--text-dim)] mb-3">Select Dates to Bunk</h2>
-                    <Calendar
-                        selectedDate={selectedDates[selectedDates.length - 1] || new Date().toISOString().split('T')[0]}
-                        onSelectDate={handleDateToggle}
-                        attendanceDates={attendanceDates}
-                        multiSelect={true}
-                        selectedDates={selectedDates}
-                        allowFuture={true}
-                    />
-
-                    {selectedDates.length > 0 && (
-                        <div className="mt-4 p-3 bg-[var(--card-bg)] rounded-md border border-[var(--border)]">
-                            <div className="flex justify-between items-center mb-2">
-                                <span className="text-sm font-semibold">Selected Dates ({selectedDates.length})</span>
-                                <button onClick={clearSelection} className="text-xs text-red-400 hover:text-red-300">
-                                    Clear All
-                                </button>
+                {/* Summary Bar */}
+                {totalBunks > 0 && (
+                    <div className="card mb-6 bg-orange-900/10 border-orange-500/30">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <p className="text-sm font-semibold text-orange-400">
+                                    Planning to bunk {totalBunks} class{totalBunks > 1 ? 'es' : ''} total
+                                </p>
+                                <p className="text-xs text-[var(--text-dim)] mt-1">
+                                    {Object.entries(bunkCounts).filter(([_, c]) => c > 0).map(([id, c]) => {
+                                        const sub = subjects.find(s => s._id === id);
+                                        return sub ? `${sub.subjectName}: ${c}` : null;
+                                    }).filter(Boolean).join(' · ')}
+                                </p>
                             </div>
-                            <div className="flex flex-wrap gap-2">
-                                {selectedDates.sort().map(date => (
-                                    <span key={date} className="px-2 py-1 bg-orange-900/20 text-orange-400 rounded text-xs">
-                                        {new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Calculate Button */}
-                <button
-                    onClick={calculateImpact}
-                    disabled={calculating || selectedDates.length === 0}
-                    className="btn btn-primary w-full mb-6"
-                >
-                    {calculating ? 'Calculating...' : `Calculate Impact (${selectedDates.length} dates)`}
-                </button>
-
-                {/* Impact Results */}
-                {impactData && (
-                    <div className="card">
-                        <h2 className="text-sm uppercase text-[var(--text-dim)] mb-4">Impact Analysis</h2>
-
-                        <div className="space-y-4">
-                            {impactData.impacts.map((impact, idx) => {
-                                const hasClass = impact.classesOnSelectedDates > 0;
-                                const percentChange = impact.afterPercentage - impact.currentPercentage;
-                                const isSafe = impact.afterPercentage >= 80;
-                                const isDanger = impact.afterPercentage < 75;
-
-                                return (
-                                    <div key={idx} className="p-4 bg-[var(--bg)] rounded-md border border-[var(--border)]">
-                                        <div className="flex justify-between items-center mb-3">
-                                            <h3 className="font-semibold">{impact.subjectName}</h3>
-                                            {!hasClass && (
-                                                <span className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded">
-                                                    No classes on selected dates
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        {hasClass && (
-                                            <>
-                                                <div className="grid grid-cols-2 gap-4 mb-3">
-                                                    <div>
-                                                        <p className="text-xs text-[var(--text-dim)] mb-1">Current</p>
-                                                        <p className="text-2xl font-bold">{impact.currentPercentage.toFixed(1)}%</p>
-                                                        <p className="text-xs text-[var(--text-dim)]">{impact.currentAttended}/{impact.currentTotal} classes</p>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs text-[var(--text-dim)] mb-1">After Bunk</p>
-                                                        <p className={`text-2xl font-bold ${isSafe ? 'text-green-400' : isDanger ? 'text-red-400' : 'text-orange-400'
-                                                            }`}>
-                                                            {impact.afterPercentage.toFixed(1)}%
-                                                        </p>
-                                                        <p className="text-xs text-[var(--text-dim)]">{impact.afterAttended}/{impact.afterTotal} classes</p>
-                                                    </div>
-                                                </div>
-
-                                                {/* Action Message */}
-                                                <div className={`p-2 rounded text-sm ${isSafe ? 'bg-green-900/20 text-green-400' :
-                                                        isDanger ? 'bg-red-900/20 text-red-400' :
-                                                            'bg-orange-900/20 text-orange-400'
-                                                    }`}>
-                                                    {(() => {
-                                                        const minPercentage = 75;
-
-                                                        if (impact.afterPercentage >= minPercentage) {
-                                                            return `✓ Still safe after bunking ${impact.classesOnSelectedDates} class${impact.classesOnSelectedDates > 1 ? 'es' : ''}`;
-                                                        } else {
-                                                            // Calculate classes needed to reach 75%
-                                                            const classesNeeded = Math.ceil(
-                                                                ((minPercentage / 100) * impact.afterTotal - impact.afterAttended) /
-                                                                (1 - (minPercentage / 100))
-                                                            );
-                                                            return `⚠️ After bunking ${impact.classesOnSelectedDates} class${impact.classesOnSelectedDates > 1 ? 'es' : ''}, attend ${classesNeeded} more to reach ${minPercentage}%`;
-                                                        }
-                                                    })()}
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                            <button onClick={clearAll} className="text-xs text-red-400 hover:text-red-300 px-3 py-1 border border-red-500/30 rounded-full">
+                                Clear All
+                            </button>
                         </div>
                     </div>
                 )}
+
+                {/* Subject Cards */}
+                <div className="space-y-4">
+                    {subjects.map(subject => {
+                        const impact = getImpact(subject);
+                        const bunkCount = impact.bunkCount;
+                        const hasImpact = bunkCount > 0;
+
+                        return (
+                            <div key={subject._id} className={`card transition ${hasImpact ? (impact.isDanger ? 'border-red-500/40' : impact.isSafe ? 'border-green-500/30' : 'border-orange-500/30') : ''}`}>
+
+                                {/* Subject Header */}
+                                <div className="flex justify-between items-center mb-4 pb-3 border-b border-[var(--border)]">
+                                    <div>
+                                        <h3 className="font-semibold text-lg">{subject.subjectName}</h3>
+                                        <p className="text-xs text-[var(--text-dim)]">
+                                            {subject.attended}/{subject.total} classes attended · Can bunk {impact.maxBunkable} more
+                                        </p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-2xl font-bold">{subject.percentage}%</p>
+                                        <p className="text-xs text-[var(--text-dim)]">current</p>
+                                    </div>
+                                </div>
+
+                                {/* Bunk Counter */}
+                                <div className="flex items-center justify-between mb-4">
+                                    <label className="text-sm text-[var(--text-dim)]">Classes to bunk</label>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={() => decrementBunk(subject._id)}
+                                            disabled={bunkCount === 0}
+                                            className="w-9 h-9 rounded-full border border-[var(--border)] flex items-center justify-center text-lg hover:bg-white/10 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                                        >
+                                            −
+                                        </button>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={bunkCount}
+                                            onChange={(e) => updateBunkCount(subject._id, e.target.value)}
+                                            className="w-14 text-center bg-transparent border border-[var(--border)] rounded-lg py-1.5 text-lg font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        />
+                                        <button
+                                            onClick={() => incrementBunk(subject._id)}
+                                            className="w-9 h-9 rounded-full border border-[var(--border)] flex items-center justify-center text-lg hover:bg-white/10 transition"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Impact Display */}
+                                {hasImpact && (
+                                    <div className="space-y-3">
+                                        {/* Before/After Bar */}
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="p-3 bg-[var(--bg)] rounded-lg border border-[var(--border)]">
+                                                <p className="text-xs text-[var(--text-dim)] mb-1">Current</p>
+                                                <p className="text-xl font-bold">{subject.percentage}%</p>
+                                                <p className="text-xs text-[var(--text-dim)]">{subject.attended}/{subject.total}</p>
+                                            </div>
+                                            <div className={`p-3 rounded-lg border ${impact.isDanger ? 'bg-red-900/10 border-red-500/30' : impact.isSafe ? 'bg-green-900/10 border-green-500/30' : 'bg-orange-900/10 border-orange-500/30'}`}>
+                                                <p className="text-xs text-[var(--text-dim)] mb-1">After Bunk</p>
+                                                <p className={`text-xl font-bold ${impact.isDanger ? 'text-red-400' : impact.isSafe ? 'text-green-400' : 'text-orange-400'}`}>
+                                                    {impact.afterPercentage.toFixed(1)}%
+                                                </p>
+                                                <p className="text-xs text-[var(--text-dim)]">{impact.afterAttended}/{impact.afterTotal}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Drop indicator */}
+                                        <div className="flex items-center gap-2">
+                                            <div className="flex-1 h-1.5 bg-[var(--bg)] rounded-full overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all ${impact.isDanger ? 'bg-red-500' : impact.isSafe ? 'bg-green-500' : 'bg-orange-500'}`}
+                                                    style={{ width: `${Math.max(0, Math.min(100, impact.afterPercentage))}%` }}
+                                                ></div>
+                                            </div>
+                                            <span className="text-xs font-semibold text-red-400">
+                                                −{impact.percentDrop.toFixed(1)}%
+                                            </span>
+                                        </div>
+
+                                        {/* Status Message */}
+                                        <div className={`p-2.5 rounded-lg text-sm ${impact.isDanger ? 'bg-red-900/20 text-red-400' :
+                                            impact.isSafe ? 'bg-green-900/20 text-green-400' :
+                                                'bg-orange-900/20 text-orange-400'
+                                            }`}>
+                                            {impact.isSafe && `✓ Still safe after bunking ${bunkCount} class${bunkCount > 1 ? 'es' : ''}`}
+                                            {!impact.isSafe && !impact.isDanger && `⚠ Borderline! Be careful, you're close to ${minPercentage}%`}
+                                            {impact.isDanger && `✗ Below ${minPercentage}%! Attend ${impact.classesToRecover} more class${impact.classesToRecover > 1 ? 'es' : ''} to recover`}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Quick info when no bunk selected */}
+                                {!hasImpact && (
+                                    <div className="text-center py-1">
+                                        <p className={`text-xs ${impact.maxBunkable > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            {impact.maxBunkable > 0
+                                                ? `You can safely bunk up to ${impact.maxBunkable} class${impact.maxBunkable > 1 ? 'es' : ''}`
+                                                : subject.percentage < minPercentage
+                                                    ? `⚠ Already below ${minPercentage}% — cannot bunk`
+                                                    : `Borderline — bunking is risky`
+                                            }
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
 
             </div>
         </>

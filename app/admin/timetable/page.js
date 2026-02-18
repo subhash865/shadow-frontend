@@ -120,26 +120,16 @@ export default function TimetableEditor() {
         });
     };
 
-const saveTimetable = async () => {
-    // Debug logging
-    console.log('🔍 Saving timetable...');
-    console.log('📋 ClassId:', classId);
-    console.log('🔑 Token exists:', !!localStorage.getItem('token'));
-    console.log('📅 Timetable data:', timetable);
-    
-    try {
-        console.log('⚡ About to call API PUT...');  // ← ADD THIS
-        const response = await api.put('/class/update-timetable', { classId, timetable });
-        console.log('✅ API Response:', response.data);  // ← ADD THIS
-        notify({ message: "Timetable Saved!", type: 'success' });
-        router.push('/admin/dashboard');
-    } catch (err) {
-        console.error('❌ Save failed:', err.response?.data || err.message);
-        console.error('📊 Full error:', err);
-        const errorMsg = err.response?.data?.error || "Failed to save. Check console for details.";
-        notify({ message: errorMsg, type: 'error' });
-    }
-};
+    const saveTimetable = async () => {
+        try {
+            await api.put('/class/update-timetable', { classId, timetable });
+            notify({ message: "Timetable Saved!", type: 'success' });
+            router.push('/admin/dashboard');
+        } catch (err) {
+            const errorMsg = err.response?.data?.error || "Failed to save. Please try again.";
+            notify({ message: errorMsg, type: 'error' });
+        }
+    };
 
     if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
 

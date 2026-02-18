@@ -1,6 +1,7 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { Shield, ArrowLeft, Loader2, Eye, EyeOff } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
 import { useNotification } from '@/app/components/Notification';
@@ -11,6 +12,18 @@ export default function AdminLogin() {
     const [className, setClassName] = useState('');
     const [adminPin, setAdminPin] = useState('');
     const [loading, setLoading] = useState(false);
+    const [checkingSession, setCheckingSession] = useState(true);
+    const [showPin, setShowPin] = useState(false);
+
+    useEffect(() => {
+        const storedClassId = localStorage.getItem('adminClassId');
+        const storedToken = localStorage.getItem('token');
+        if (storedClassId && storedToken) {
+            router.push('/admin/dashboard');
+        } else {
+            setCheckingSession(false);
+        }
+    }, [router]);
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -18,16 +31,8 @@ export default function AdminLogin() {
 
         try {
             const res = await api.post('/class/admin-login', { className, adminPin });
-
-            // SAVE THE TOKEN AND CLASS ID
             localStorage.setItem('adminClassId', res.data.classId);
             localStorage.setItem('token', res.data.token);
-
-            // Debug: Verify token was saved
-            console.log('✅ Login successful');
-            console.log('🔑 Token saved:', res.data.token ? 'Yes' : 'No');
-            console.log('📋 ClassId saved:', res.data.classId);
-
             router.push('/admin/dashboard');
         } catch (err) {
             if (err.response?.status === 401) {
@@ -41,60 +46,86 @@ export default function AdminLogin() {
         }
     };
 
+    if (checkingSession) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
+
     return (
         <>
             <Navbar />
 
-            <div className="max-w-md mx-auto px-4 py-12">
+            <div className="max-w-md mx-auto px-4 py-16">
 
-                <div className="mb-8">
-                    <h1 className="text-2xl font-bold mb-2">Admin Login</h1>
-                    <p>Enter your credentials to continue</p>
+                {/* Header */}
+                <div className="text-center mb-8 animate-fade-up">
+                    <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto mb-4">
+                        <Shield className="w-6 h-6 text-blue-400" />
+                    </div>
+                    <h1 className="text-2xl font-bold mb-2" style={{ letterSpacing: '-0.03em' }}>Admin Login</h1>
+                    <p className="text-[var(--text-dim)]">Enter your class credentials to continue</p>
                 </div>
 
-                <div className="card">
+                {/* Form */}
+                <div className="glass-card animate-fade-up delay-100">
                     <form onSubmit={handleLogin} className="space-y-4">
-
                         <div>
-                            <label className="block text-sm font-medium text-[var(--text-dim)] mb-2">Class Name</label>
+                            <label className="block text-xs font-medium text-[var(--text-dim)] mb-2 uppercase tracking-wider">Class Name</label>
                             <input
+                                id="admin-class-name"
                                 type="text"
                                 className="input"
-                                placeholder="e.g. S6 CSE-B "
+                                placeholder="e.g. S6 CSE-B"
                                 value={className}
                                 onChange={(e) => setClassName(e.target.value)}
+                                autoComplete="off"
                                 required
                             />
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-[var(--text-dim)] mb-2">Admin PIN</label>
-                            <input
-                                type="password"
-                                className="input"
-                                placeholder="****"
-                                value={adminPin}
-                                onChange={(e) => setAdminPin(e.target.value)}
-                                required
-                            />
+                            <label className="block text-xs font-medium text-[var(--text-dim)] mb-2 uppercase tracking-wider">Admin PIN</label>
+                            <div className="relative">
+                                <input
+                                    id="admin-pin"
+                                    type={showPin ? 'text' : 'password'}
+                                    className="input pr-12"
+                                    placeholder="••••"
+                                    value={adminPin}
+                                    onChange={(e) => setAdminPin(e.target.value)}
+                                    required
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPin(!showPin)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-dim)] hover:text-white transition"
+                                >
+                                    {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
+                            </div>
                         </div>
 
                         <button
+                            id="admin-login-submit"
                             type="submit"
                             disabled={loading}
-                            className="btn btn-primary"
+                            className="btn btn-primary mt-2"
                         >
-                            {loading ? "Verifying..." : "Login"}
+                            {loading ? (
+                                <span className="flex items-center gap-2">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Verifying...
+                                </span>
+                            ) : 'Login'}
                         </button>
                     </form>
                 </div>
 
-                <div className="mt-6 text-center">
+                {/* Back link */}
+                <div className="mt-6 text-center animate-fade-up delay-200">
                     <button
                         onClick={() => router.push('/')}
-                        className="text-sm text-[var(--text-dim)] hover:text-white"
+                        className="inline-flex items-center gap-2 text-sm text-[var(--text-dim)] hover:text-white transition"
                     >
-                        ← Back to Home
+                        <ArrowLeft className="w-4 h-4" />
+                        Back to Home
                     </button>
                 </div>
 
