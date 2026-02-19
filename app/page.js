@@ -1,10 +1,49 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Calendar, Users, TrendingUp, Bell, Shield, Clock, GraduationCap, School } from 'lucide-react';
+import {
+    Calendar, Users, TrendingUp, Bell, Shield, Clock,
+    GraduationCap, School, ChevronRight, Zap, BarChart3,
+    BookOpen, ArrowRight, Sparkles
+} from 'lucide-react';
 import Navbar from './components/Navbar';
 import api from '@/utils/api';
 import { useNotification } from './components/Notification';
+
+// Animated counter hook
+function useCounter(target, duration = 2000) {
+    const [count, setCount] = useState(0);
+    const ref = useRef(null);
+    const started = useRef(false);
+
+    useEffect(() => {
+        if (!target || started.current) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && !started.current) {
+                    started.current = true;
+                    const startTime = performance.now();
+                    const animate = (now) => {
+                        const elapsed = now - startTime;
+                        const progress = Math.min(elapsed / duration, 1);
+                        // Ease-out cubic
+                        const eased = 1 - Math.pow(1 - progress, 3);
+                        setCount(Math.floor(eased * target));
+                        if (progress < 1) requestAnimationFrame(animate);
+                    };
+                    requestAnimationFrame(animate);
+                }
+            },
+            { threshold: 0.3 }
+        );
+
+        if (ref.current) observer.observe(ref.current);
+        return () => observer.disconnect();
+    }, [target, duration]);
+
+    return { count, ref };
+}
 
 export default function Home() {
     const router = useRouter();
@@ -13,29 +52,67 @@ export default function Home() {
     const [rollNumber, setRollNumber] = useState('');
     const [loading, setLoading] = useState(false);
     const [stats, setStats] = useState({ totalClasses: 0, totalStudents: 0 });
+    const [sessionChecked, setSessionChecked] = useState(false);
+    const [activeTab, setActiveTab] = useState('student');
+
+
 
     useEffect(() => {
-        // Fetch system statistics
+        const adminClassId = localStorage.getItem('adminClassId');
+        const adminToken = localStorage.getItem('token');
+        const studentClassId = localStorage.getItem('studentClassId');
+        const studentRoll = localStorage.getItem('studentRoll');
+
+        // Auto-redirect: Admin with valid token
+        if (adminClassId && adminToken) {
+            api.post('/class/verify-token')
+                .then(res => {
+                    // Token is valid — renew and redirect
+                    localStorage.setItem('token', res.data.token);
+                    localStorage.setItem('adminClassId', res.data.classId);
+                    router.push('/admin/dashboard');
+                })
+                .catch(() => {
+                    localStorage.removeItem('adminClassId');
+                    localStorage.removeItem('token');
+                    setSessionChecked(true);
+                });
+            return; // Don't check student — admin takes priority
+        }
+
+        // Auto-redirect: Returning student
+        if (studentClassId && studentRoll) {
+            api.get(`/class/${studentClassId}`)
+                .then(res => {
+                    // Class still exists — redirect to student dashboard
+                    router.push(`/student/${studentClassId}/${studentRoll}`);
+                })
+                .catch(() => {
+                    localStorage.removeItem('studentClassId');
+                    localStorage.removeItem('studentRoll');
+                    localStorage.removeItem('studentClassName');
+                    setSessionChecked(true);
+                });
+            return;
+        }
+
+        // No saved session — show landing page
+        setSessionChecked(true);
+
         api.get('/class/stats/all')
-            .then(res => {
-                setStats(res.data);
-            })
-            .catch(err => {
-                console.error('Failed to fetch stats:', err);
-            });
+            .then(res => setStats(res.data))
+            .catch(() => { });
     }, []);
 
     const handleStudentLogin = async (e) => {
         e.preventDefault();
         setLoading(true);
-
         try {
             const res = await api.get(`/class/lookup/${className.trim()}`);
             const classId = res.data.classId;
-
             localStorage.setItem('studentClassId', classId);
             localStorage.setItem('studentRoll', rollNumber);
-
+            localStorage.setItem('studentClassName', className.trim());
             router.push(`/student/${classId}/${rollNumber}`);
         } catch (err) {
             notify({ message: "Class not found! Check the name.", type: 'error' });
@@ -43,238 +120,172 @@ export default function Home() {
         }
     };
 
+
+
+    if (!sessionChecked) {
+        return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
+    }
+
     return (
         <>
             <Navbar />
 
-            <div className="max-w-5xl mx-auto px-4 py-12">
-                {/* Hero Section */}
-                <div className="text-center mb-8">
-                    <h1 className="text-5xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
-                        Attendance Made Simple
-                    </h1>
-                    <p className="text-xl text-[var(--text-dim)] max-w-2xl mx-auto mb-8">
-                        Track attendance records, plan your leaves intelligently, and stay on top of your academic attendance requirements.
+            {/* ═══════════ HERO ═══════════ */}
+            <section className="relative overflow-hidden">
+                {/* Gradient orbs */}
+                <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-blue-600/8 rounded-full blur-[120px] pointer-events-none"></div>
+                <div className="absolute bottom-[-20%] right-[-10%] w-[400px] h-[400px] bg-purple-600/6 rounded-full blur-[120px] pointer-events-none"></div>
+
+                <div className="max-w-5xl mx-auto px-4 pt-16 pb-12 relative">
+                    <div className="text-center">
+                        {/* Badge */}
+                      
+
+                        {/* Headline */}
+                        <h1 className="animate-fade-up delay-100 text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.1]"
+                            style={{ letterSpacing: '-0.04em' }}>
+                            <span className="bg-gradient-to-b from-white via-white to-gray-500 bg-clip-text text-transparent">
+                                Bunk class smartly,
+                            </span>
+                            <br />
+                            <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-violet-400 bg-clip-text text-transparent">
+                                instead of blindly.
+                            </span>
+                        </h1>
+
+                        {/* Subhead */}
+ 
+
+
+                    </div>
+                </div>
+            </section>
+
+            {/* ═══════════ LOGIN SECTION ═══════════ */}
+            <section className="max-w-md mx-auto px-4 mb-20">
+                {/* Tab switcher */}
+                <div className="flex mb-6 bg-white/3 rounded-full p-1 border border-white/6">
+                    <button
+                        onClick={() => setActiveTab('student')}
+                        className={`flex-1 py-2.5 rounded-full text-sm font-medium transition-all ${activeTab === 'student'
+                            ? 'bg-white text-black shadow-lg'
+                            : 'text-[var(--text-dim)] hover:text-white'
+                            }`}
+                    >
+                        Student
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('admin')}
+                        className={`flex-1 py-2.5 rounded-full text-sm font-medium transition-all ${activeTab === 'admin'
+                            ? 'bg-white text-black shadow-lg'
+                            : 'text-[var(--text-dim)] hover:text-white'
+                            }`}
+                    >
+                        Admin
+                    </button>
+                </div>
+
+                {/* Student form */}
+                {activeTab === 'student' && (
+                    <div className="animate-fade-in">
+                        <form onSubmit={handleStudentLogin} className="glass-card">
+                            <div className="flex items-center gap-2 mb-5">
+                                <GraduationCap className="w-5 h-5 text-emerald-400" />
+                                <h2 className="text-sm font-semibold uppercase tracking-wider">Student Access</h2>
+                            </div>
+
+                            <input
+                                id="student-class-name"
+                                type="text"
+                                className="input mb-3"
+                                placeholder="Class Name (e.g. S6 CSE-B)"
+                                value={className}
+                                onChange={(e) => setClassName(e.target.value)}
+                                required
+                            />
+
+                            <input
+                                id="student-roll-number"
+                                type="number"
+                                className="input mb-5"
+                                placeholder="Roll Number"
+                                value={rollNumber}
+                                onChange={(e) => setRollNumber(e.target.value)}
+                                required
+                            />
+
+                            <button id="student-login-btn" type="submit" className="btn btn-primary" disabled={loading}>
+                                {loading ? (
+                                    <span className="flex items-center gap-2">
+                                        <span className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></span>
+                                        Loading...
+                                    </span>
+                                ) : (
+                                    <span className="flex items-center gap-2">
+                                        View My Attendance
+                                        <ArrowRight className="w-4 h-4" />
+                                    </span>
+                                )}
+                            </button>
+                        </form>
+                    </div>
+                )}
+
+                {/* Admin form */}
+                {activeTab === 'admin' && (
+                    <div className="animate-fade-in">
+                        <div className="glass-card">
+                            <div className="flex items-center gap-2 mb-5">
+                                <Shield className="w-5 h-5 text-blue-400" />
+                                <h2 className="text-sm font-semibold uppercase tracking-wider">Admin Access</h2>
+                            </div>
+
+                            <div className="space-y-3">
+                                <button
+                                    id="admin-login-btn"
+                                    onClick={() => router.push('/admin/login')}
+                                    className="w-full py-3.5 px-5 rounded-xl border border-blue-500/20 bg-blue-950/20 hover:bg-blue-950/40 transition-all flex items-center justify-between group"
+                                >
+                                    <div className="text-left">
+                                        <p className="text-sm font-semibold">Login to Existing Class</p>
+                                        <p className="text-xs text-[var(--text-dim)]">Use your class name & admin PIN</p>
+                                    </div>
+                                    <ChevronRight className="w-4 h-4 text-blue-400 group-hover:translate-x-1 transition-transform" />
+                                </button>
+
+                                <button
+                                    id="admin-setup-btn"
+                                    onClick={() => router.push('/admin/setup')}
+                                    className="w-full py-3.5 px-5 rounded-xl border border-emerald-500/20 bg-emerald-950/20 hover:bg-emerald-950/40 transition-all flex items-center justify-between group"
+                                >
+                                    <div className="text-left">
+                                        <p className="text-sm font-semibold">Create New Class</p>
+                                        <p className="text-xs text-[var(--text-dim)]">Set up a class as representative</p>
+                                    </div>
+                                    <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-transform" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </section>
+
+
+
+            {/* ═══════════ FOOTER ═══════════ */}
+            <footer className="border-t border-white/5 py-8">
+                <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center">
+                            <span className="text-xs font-bold">S</span>
+                        </div>
+                        <span className="text-sm font-semibold">Shadow</span>
+                    </div>
+                    <p className="text-xs text-[var(--text-dim)]">
+                        Built for students, by students. Track smarter, not harder.
                     </p>
-
-                    {/* Stats Display */}
-                    <div className="flex justify-center gap-8 mb-8">
-                        <div className="flex items-center gap-3 px-6 py-3 rounded-full bg-white/5 border border-white/10">
-                            <School className="w-5 h-5 text-blue-400" />
-                            <div className="text-left">
-                                <p className="text-2xl font-bold">{stats.totalClasses}</p>
-                                <p className="text-xs text-[var(--text-dim)]">Active Classes</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-3 px-6 py-3 rounded-full bg-white/5 border border-white/10">
-                            <GraduationCap className="w-5 h-5 text-green-400" />
-                            <div className="text-left">
-                                <p className="text-2xl font-bold">{stats.totalStudents}</p>
-                                <p className="text-xs text-[var(--text-dim)]">Total Students</p>
-                            </div>
-                        </div>
-                    </div>
                 </div>
-
-                {/* Student Login Section */}
-                <div className="max-w-md mx-auto mb-16">
-                    <form onSubmit={handleStudentLogin} className="card">
-                        <h2 className="text-sm uppercase text-[var(--text-dim)] mb-4 text-center">Student Access</h2>
-
-                        <input
-                            type="text"
-                            className="input mb-4"
-                            placeholder="Class Name (e.g. S6 CSE-B)"
-                            value={className}
-                            onChange={(e) => setClassName(e.target.value)}
-                            required
-                        />
-
-                        <input
-                            type="number"
-                            className="input mb-4"
-                            placeholder="Roll Number (e.g. 1-100)"
-                            value={rollNumber}
-                            onChange={(e) => setRollNumber(e.target.value)}
-                            required
-                        />
-
-                        <button type="submit" className="btn btn-primary" disabled={loading}>
-                            {loading ? 'Loading...' : 'View My Attendance'}
-                        </button>
-                    </form>
-
-                    <div className="mt-6 flex flex-col gap-2">
-                        <p className="text-center text-sm text-[var(--text-dim)]">Are you a class representative?</p>
-                        <button
-                            onClick={() => router.push('/admin/setup')}
-                            className="btn btn-outline"
-                        >
-                            Create New Class
-                        </button>
-                        <button
-                            onClick={() => router.push('/admin/login')}
-                            className="btn btn-outline"
-                        >
-                            Admin Login
-                        </button>
-                    </div>
-                </div>
-
-                {/* How It Works Section */}
-                <div className="mb-16">
-                    <h2 className="text-3xl font-bold text-center mb-8">How It Works</h2>
-                    <div className="grid md:grid-cols-3 gap-6">
-                        <div className="card text-center hover:border-white/30 transition">
-                            <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-4">
-                                <span className="text-2xl font-bold">1</span>
-                            </div>
-                            <h3 className="text-lg font-semibold mb-2">Admin Setup</h3>
-                            <p className="text-sm">
-                                Class representative creates the class, adds subjects, sets up timetable, and configures class strength.
-                            </p>
-                        </div>
-                        <div className="card text-center hover:border-white/30 transition">
-                            <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-4">
-                                <span className="text-2xl font-bold">2</span>
-                            </div>
-                            <h3 className="text-lg font-semibold mb-2">Mark Attendance</h3>
-                            <p className="text-sm">
-                                Admin marks daily attendance by selecting absent students for each period with an intuitive grid interface.
-                            </p>
-                        </div>
-                        <div className="card text-center hover:border-white/30 transition">
-                            <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-4">
-                                <span className="text-2xl font-bold">3</span>
-                            </div>
-                            <h3 className="text-lg font-semibold mb-2">Students Access</h3>
-                            <p className="text-sm">
-                                Students view their attendance percentage, track records, and plan bunks without dropping below minimum threshold.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Features Section */}
-                <div className="mb-16">
-                    <h2 className="text-3xl font-bold text-center mb-8">Key Features</h2>
-                    <div className="grid md:grid-cols-2 gap-6">
-                        <div className="card hover:border-white/30 transition">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-blue-500/20 border border-blue-500/30 flex items-center justify-center flex-shrink-0">
-                                    <Calendar className="w-5 h-5 text-blue-400" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold mb-2">Smart Calendar</h3>
-                                    <p className="text-sm text-[var(--text-dim)]">
-                                        Interactive calendar to track attendance history. View past records, mark special dates like exams and holidays that auto-exclude from calculations.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="card hover:border-white/30 transition">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-green-500/20 border border-green-500/30 flex items-center justify-center flex-shrink-0">
-                                    <TrendingUp className="w-5 h-5 text-green-400" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold mb-2">Real-Time Analytics</h3>
-                                    <p className="text-sm text-[var(--text-dim)]">
-                                        Live attendance percentage tracking per subject. Visual progress bars show how close you are to minimum requirements.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="card hover:border-white/30 transition">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center flex-shrink-0">
-                                    <Users className="w-5 h-5 text-purple-400" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold mb-2">Bunk Planning</h3>
-                                    <p className="text-sm text-[var(--text-dim)]">
-                                        Calculate exactly how many classes you can skip without falling below the minimum attendance threshold. Plan intelligently!
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="card hover:border-white/30 transition">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-orange-500/20 border border-orange-500/30 flex items-center justify-center flex-shrink-0">
-                                    <Shield className="w-5 h-5 text-orange-400" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold mb-2">Flexible Timetable</h3>
-                                    <p className="text-sm text-[var(--text-dim)]">
-                                        Admins can swap day schedules, add/remove periods, and handle special class arrangements with edit mode.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="card hover:border-white/30 transition">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center flex-shrink-0">
-                                    <Bell className="w-5 h-5 text-red-400" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold mb-2">Instant Notifications</h3>
-                                    <p className="text-sm text-[var(--text-dim)]">
-                                        Custom notification system keeps you informed of all actions. No more missing important updates.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="card hover:border-white/30 transition">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center flex-shrink-0">
-                                    <Clock className="w-5 h-5 text-cyan-400" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold mb-2">Historical Records</h3>
-                                    <p className="text-sm text-[var(--text-dim)]">
-                                        Access complete attendance history. Admins can edit past records anytime to correct mistakes.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Benefits Section */}
-                <div className="card mb-12 bg-gradient-to-br from-white/5 to-white/0 border-white/20">
-                    <h2 className="text-2xl font-bold text-center mb-6">Why Use This System?</h2>
-                    <div className="grid md:grid-cols-2 gap-6">
-                        <div>
-                            <h3 className="font-semibold mb-2 text-green-400">For Students</h3>
-                            <ul className="space-y-2 text-sm text-[var(--text-dim)]">
-                                <li>✓ Know your exact attendance percentage anytime</li>
-                                <li>✓ Plan leaves without risking detention</li>
-                                <li>✓ Subject-wise tracking for better management</li>
-                                <li>✓ No more uncertainty about attendance status</li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h3 className="font-semibold mb-2 text-blue-400">For Admins</h3>
-                            <ul className="space-y-2 text-sm text-[var(--text-dim)]">
-                                <li>✓ Quick attendance marking with grid interface</li>
-                                <li>✓ Bulk input for faster processing</li>
-                                <li>✓ Flexible timetable management</li>
-                                <li>✓ Complete control with edit & update capabilities</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Footer */}
-                <div className="text-center text-sm text-[var(--text-dim)] pb-8">
-                    <p>Built for students, by students. Track smarter, not harder.</p>
-                </div>
-            </div>
+            </footer>
         </>
     );
 }

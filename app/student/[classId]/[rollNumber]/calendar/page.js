@@ -35,8 +35,13 @@ export default function StudentCalendar() {
 
         // Fetch attendance dates
         api.get(`/attendance/dates/${classId}`)
-            .then(res => setAttendanceDates(res.data.dates || []))
-            .catch(err => console.log("No attendance dates"));
+            .then(res => {
+                const formattedDates = (res.data.dates || []).map(dateStr => {
+                    return new Date(dateStr).toISOString().split('T')[0];
+                });
+                setAttendanceDates(formattedDates);
+            })
+            .catch(() => { });
     }, [classId, rollNumber]);
 
     // Load day-specific attendance when date changes
@@ -56,6 +61,7 @@ export default function StudentCalendar() {
     const handleLogout = () => {
         localStorage.removeItem('studentClassId');
         localStorage.removeItem('studentRoll');
+        localStorage.removeItem('studentClassName');
         router.push('/');
     };
 

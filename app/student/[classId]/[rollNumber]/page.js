@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
 import { useNotification } from '@/app/components/Notification';
@@ -13,12 +14,17 @@ export default function StudentDashboard() {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [minPercentage, setMinPercentage] = useState(75);
+  const [announcementCount, setAnnouncementCount] = useState(0);
+  const [allAnnouncements, setAllAnnouncements] = useState([]);
 
-  // New State for History Modal
-  const [historyModal, setHistoryModal] = useState(false); // Controls visibility
-  const [selectedSubject, setSelectedSubject] = useState(null); // Stores subject name
-  const [historyData, setHistoryData] = useState([]); // Stores the list of dates
+  // History/Works Modal
+  const [historyModal, setHistoryModal] = useState(false);
+  const [selectedSubject, setSelectedSubject] = useState(null);
+  const [selectedSubjectId, setSelectedSubjectId] = useState(null);
+  const [historyData, setHistoryData] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [modalTab, setModalTab] = useState('history'); // 'history' | 'works'
 
   // Report Issue Modal State
   const [reportModal, setReportModal] = useState(false);
@@ -28,40 +34,103 @@ export default function StudentDashboard() {
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [myReports, setMyReports] = useState([]);
 
+  // Load saved min percentage from localStorage
   useEffect(() => {
+    const saved = localStorage.getItem('studentMinPercentage');
+    if (saved) setMinPercentage(parseInt(saved));
+  }, []);
+
+  const handleMinPercentageChange = (value) => {
+    const val = parseInt(value);
+    setMinPercentage(val);
+    localStorage.setItem('studentMinPercentage', val.toString());
+  };
+
+  // Calculate dynamic bunk message based on student's threshold
+  const getBunkMessage = (attended, total, percentage) => {
+    if (total === 0) return { text: 'No classes yet', type: 'neutral' };
+
+    if (percentage >= minPercentage + 5) {
+      const canBunk = Math.floor((attended / (minPercentage / 100)) - total);
+      return { text: `Safe! You can bunk ${Math.max(0, canBunk)} more`, type: 'safe' };
+    } else if (percentage < minPercentage) {
+      const mustAttend = Math.ceil(((minPercentage / 100) * total - attended) / (1 - (minPercentage / 100)));
+      return { text: `Attend next ${Math.max(1, mustAttend)} to recover`, type: 'danger' };
+    } else {
+      return { text: 'Borderline — be careful', type: 'warning' };
+    }
+  };
+
+  const getDeadlineStatus = (dueDate) => {
+    if (!dueDate) return null;
+    const now = new Date();
+    const due = new Date(dueDate);
+    const diffTime = due - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffTime < 0) return { text: `Overdue by ${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? 's' : ''}`, type: 'danger', days: diffDays };
+    if (diffDays === 0) return { text: 'Due Today', type: 'urgent', days: 0 };
+    if (diffDays === 1) return { text: 'Due Tomorrow', type: 'warning', days: 1 };
+    return { text: `${diffDays} days left`, type: 'safe', days: diffDays };
+  };
+
+  const fetchData = async () => {
     if (!classId || !rollNumber) return;
 
-    api.get(`/student/report/${classId}/${rollNumber}`)
-      .then(res => {
-        setData(res.data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Fetch Error:", err);
-        notify({ message: "Student not found or Server Error", type: 'error' });
-        setLoading(false);
-      });
+    try {
+      const [reportRes, reportsRes, announcementsRes] = await Promise.allSettled([
+        api.get(`/student/report/${classId}/${rollNumber}`),
+        api.get(`/reports/${classId}/${rollNumber}`),
+        api.get(`/announcements/${classId}`)
+      ]);
 
-    // Fetch student's reports
-    api.get(`/reports/${classId}/${rollNumber}`)
-      .then(res => {
-        setMyReports(res.data.reports || []);
-      })
-      .catch(err => {
-        console.error("Failed to fetch reports:", err);
-      });
+      if (reportRes.status === 'fulfilled') {
+        setData(reportRes.value.data);
+      } else {
+        notify({ message: "Student not found or Server Error", type: 'error' });
+      }
+
+      if (reportsRes.status === 'fulfilled') {
+        setMyReports(reportsRes.value.data.reports || []);
+      }
+
+      if (announcementsRes.status === 'fulfilled') {
+        const announcements = announcementsRes.value.data.announcements || [];
+        setAllAnnouncements(announcements);
+
+        // Count urgent announcements (due in next 24h)
+        const now = new Date();
+        const urgentCount = announcements.filter(a => {
+          if (!a.dueDate) return false;
+          const due = new Date(a.dueDate);
+          const diff = due - now;
+          return diff > 0 && diff < 86400000;
+        }).length;
+        setAnnouncementCount(urgentCount);
+      }
+    } catch (err) {
+      console.error("Fetch Error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
   }, [classId, rollNumber]);
 
   const handleLogout = () => {
     localStorage.removeItem('studentClassId');
     localStorage.removeItem('studentRoll');
+    localStorage.removeItem('studentClassName');
     router.push('/');
   };
 
-  // New Function to fetch history
   const fetchHistory = async (subjectId, subjectName) => {
     setHistoryModal(true);
     setSelectedSubject(subjectName);
+    setSelectedSubjectId(subjectId);
+    setModalTab('history'); // Reset to history tab by default
     setHistoryLoading(true);
     setHistoryData([]);
 
@@ -70,13 +139,13 @@ export default function StudentDashboard() {
       setHistoryData(res.data.history);
     } catch (err) {
       notify({ message: "Failed to load history", type: 'error' });
-      setHistoryModal(false);
+      // Keep modal open so they can switch to works if needed
+      setHistoryLoading(false);
     } finally {
       setHistoryLoading(false);
     }
   };
 
-  // Submit Report Function
   const submitReport = async (e) => {
     e.preventDefault();
     if (!reportDate || !reportSubjectId || !reportDescription.trim()) {
@@ -85,15 +154,7 @@ export default function StudentDashboard() {
     }
 
     setReportSubmitting(true);
-    const selectedSubject = data.subjects.find(s => s._id === reportSubjectId);
-    console.log("Submit Payload:", {
-      classId,
-      studentRoll: parseInt(rollNumber),
-      date: reportDate,
-      subjectId: reportSubjectId,
-      subjectName: selectedSubject?.subjectName,
-      issueDescription: reportDescription
-    });
+    const selectedSub = data.subjects.find(s => s._id === reportSubjectId);
 
     try {
       await api.post('/reports/submit', {
@@ -101,7 +162,7 @@ export default function StudentDashboard() {
         studentRoll: parseInt(rollNumber),
         date: reportDate,
         subjectId: reportSubjectId,
-        subjectName: selectedSubject?.subjectName || 'Unknown',
+        subjectName: selectedSub?.subjectName || 'Unknown',
         issueDescription: reportDescription
       });
 
@@ -111,7 +172,6 @@ export default function StudentDashboard() {
       setReportSubjectId('');
       setReportDescription('');
 
-      // Refresh reports list
       const res = await api.get(`/reports/${classId}/${rollNumber}`);
       setMyReports(res.data.reports || []);
     } catch (err) {
@@ -120,6 +180,20 @@ export default function StudentDashboard() {
       setReportSubmitting(false);
     }
   };
+
+  // Get urgent deadlines (Due within 24h)
+  const urgentTasks = allAnnouncements.filter(a => {
+    if (!a.dueDate) return false;
+    const due = new Date(a.dueDate);
+    const now = new Date();
+    const diff = due - now;
+    return diff > 0 && diff < 86400000; // Positive and less than 24h
+  });
+
+  // Get subject specific works
+  const subjectWorks = selectedSubjectId
+    ? allAnnouncements.filter(a => a.subjectId === selectedSubjectId || a.subjectName === selectedSubject)
+    : [];
 
   if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading Report...</div>;
   if (!data) return <div className="flex h-screen items-center justify-center text-[var(--text-dim)]">Student Not Found</div>;
@@ -136,6 +210,7 @@ export default function StudentDashboard() {
 
       <div className="max-w-2xl mx-auto px-4 py-8">
 
+        {/* Header */}
         <div className="mb-6">
           <div className="flex justify-between items-center mb-2">
             <div>
@@ -152,14 +227,75 @@ export default function StudentDashboard() {
           </div>
         </div>
 
-        <h2 className="text-sm uppercase text-[var(--text-dim)] mb-4">Overall Attendance</h2>
+        {/* Urgent Deadlines (Due in 24h) */}
+        {urgentTasks.length > 0 && (
+          <div className="card mb-6 bg-gradient-to-br from-red-900/10 to-transparent border-red-500/30">
+            <h2 className="text-sm font-semibold text-red-400 mb-3 flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+              </span>
+              Urgent Tasks (Due in 24h)
+            </h2>
+
+            <div className="space-y-3">
+              {urgentTasks.map(task => {
+                const status = getDeadlineStatus(task.dueDate);
+                return (
+                  <div key={task._id} className="p-3 rounded bg-[var(--bg)] border border-[var(--border)] relative overflow-hidden">
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500"></div>
+                    <div className="flex justify-between items-start mb-1 pl-2">
+                      <span className="font-semibold text-sm">{task.title}</span>
+                      <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">
+                        {status?.text}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--text-dim)] line-clamp-2 pl-2">{task.description}</p>
+                    <p className="text-[10px] text-[var(--text-dim)] mt-2 pl-2">
+                      {task.subjectName || 'General'}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Minimum Attendance Slider */}
+        <div className="card mb-6">
+          <div className="flex justify-between items-center mb-3">
+            <label className="text-sm text-[var(--text-dim)]">My Minimum Attendance</label>
+            <span className="text-lg font-bold text-white">{minPercentage}%</span>
+          </div>
+          <input
+            type="range"
+            min="50"
+            max="95"
+            step="5"
+            value={minPercentage}
+            onChange={(e) => handleMinPercentageChange(e.target.value)}
+            className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+            style={{
+              background: `linear-gradient(to right, #3b82f6 ${((minPercentage - 50) / 45) * 100}%, #333 ${((minPercentage - 50) / 45) * 100}%)`
+            }}
+          />
+          <div className="flex justify-between text-xs text-[var(--text-dim)] mt-1.5">
+            <span>50%</span>
+            <span>75%</span>
+            <span>95%</span>
+          </div>
+        </div>
+
+        {/* Subject-wise Attendance */}
+        <h2 className="text-sm uppercase text-[var(--text-dim)] mb-4">Subject-wise Attendance</h2>
         <div className="space-y-4">
           {data.subjects?.map((sub, idx) => {
             const percentage = sub.percentage;
-            const isSafe = percentage >= 80;
+            const isSafe = percentage >= minPercentage;
+            const bunkInfo = getBunkMessage(sub.attended, sub.total, percentage);
 
             return (
-              <div key={idx} className="card relative group">
+              <div key={idx} className="card relative group hover:border-[var(--text-dim)] transition-colors cursor-pointer" onClick={() => fetchHistory(sub._id, sub.subjectName)}>
                 <div className="flex justify-between items-center mb-3">
                   <h2 className="text-lg font-semibold">{sub.subjectName}</h2>
                   <span className={`px-3 py-1 rounded-md text-sm font-semibold ${isSafe ? 'bg-[var(--success)] text-[var(--success-text)]' : 'bg-[var(--danger)] text-[var(--danger-text)]'
@@ -179,30 +315,76 @@ export default function StudentDashboard() {
                   </div>
                 </div>
 
-                <p className="text-sm text-[var(--text-dim)] italic mb-4">
-                  {sub.message}
-                </p>
+                <div className="mb-3">
+                  <div className="h-1.5 bg-[var(--bg)] rounded-full overflow-hidden relative">
+                    <div
+                      className="absolute top-0 bottom-0 w-0.5 bg-white/40 z-10"
+                      style={{ left: `${minPercentage}%` }}
+                    ></div>
+                    <div
+                      className={`h-full rounded-full transition-all ${bunkInfo.type === 'safe' ? 'bg-green-500' :
+                        bunkInfo.type === 'danger' ? 'bg-red-500' :
+                          'bg-orange-500'
+                        }`}
+                      style={{ width: `${Math.min(100, percentage)}%` }}
+                    ></div>
+                  </div>
+                </div>
 
-                {/* New View History Button */}
-                <button
-                  onClick={() => fetchHistory(sub._id, sub.subjectName)}
-                  className="w-full py-2 rounded-md border border-[var(--border)] text-sm text-[var(--text-dim)] hover:text-white hover:border-white transition-colors"
-                >
-                  View Detailed History
-                </button>
+                <p className={`text-sm italic mb-1 ${bunkInfo.type === 'safe' ? 'text-green-400/80' :
+                  bunkInfo.type === 'danger' ? 'text-red-400/80' :
+                    'text-orange-400/80'
+                  }`}>
+                  {bunkInfo.text}
+                </p>
+                <p className="text-xs text-[var(--text-dim)] text-right mt-2 flex items-center justify-end gap-1 group-hover:text-white transition-colors">
+                  Tap for Details & Tasks →
+                </p>
               </div>
             );
           }) || <p className="text-[var(--text-dim)] text-center">No subjects found</p>}
         </div>
 
-        {/* --- History Modal --- */}
+        {/* Quick Navigate */}
+        <div className="mt-8 mb-6">
+          <h2 className="text-sm uppercase text-[var(--text-dim)] mb-4">Quick Navigate</h2>
+          <div className="grid grid-cols-3 gap-3">
+            <Link
+              href={`/student/${classId}/${rollNumber}/calendar`}
+              className="card text-center py-4 hover:border-blue-500/50 transition group"
+            >
+              <p className="text-2xl mb-2">📅</p>
+              <p className="text-xs text-[var(--text-dim)] group-hover:text-blue-400 transition">Calendar</p>
+            </Link>
+            <Link
+              href={`/student/${classId}/${rollNumber}/bunk-effect`}
+              className="card text-center py-4 hover:border-purple-500/50 transition group"
+            >
+              <p className="text-2xl mb-2">🧮</p>
+              <p className="text-xs text-[var(--text-dim)] group-hover:text-purple-400 transition">Bunk Effect</p>
+            </Link>
+            <Link
+              href={`/student/${classId}/${rollNumber}/attention`}
+              className="card text-center py-4 hover:border-orange-500/50 transition group relative"
+            >
+              <p className="text-2xl mb-2">📢</p>
+              <p className="text-xs text-[var(--text-dim)] group-hover:text-orange-400 transition">Attention</p>
+              {announcementCount > 0 && (
+                <span className="absolute top-2 right-2 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1">
+                  {announcementCount}
+                </span>
+              )}
+            </Link>
+          </div>
+        </div>
+
+        {/* --- History & Works Modal --- */}
         {historyModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
             <div className="bg-[#0a0a0a] border border-[#333] w-full max-w-md rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
 
-              {/* Modal Header */}
               <div className="p-4 border-b border-[#333] flex justify-between items-center bg-[#0a0a0a]">
-                <h3 className="font-bold text-lg">{selectedSubject} History</h3>
+                <h3 className="font-bold text-lg">{selectedSubject}</h3>
                 <button
                   onClick={() => setHistoryModal(false)}
                   className="text-[var(--text-dim)] hover:text-white text-xl leading-none"
@@ -211,43 +393,87 @@ export default function StudentDashboard() {
                 </button>
               </div>
 
-              {/* Modal Body (Scrollable) */}
-              <div className="overflow-y-auto p-4 flex-1">
-                {historyLoading ? (
-                  <div className="text-center py-8 text-[var(--text-dim)] animate-pulse">Loading records...</div>
-                ) : historyData.length === 0 ? (
-                  <div className="text-center py-8 text-[var(--text-dim)]">No classes recorded yet.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {historyData.map((record, i) => (
-                      <div key={i} className="flex justify-between items-center p-3 rounded bg-[#111] border border-[#222]">
-                        <span className="text-sm text-gray-300">
-                          {new Date(record.date).toLocaleDateString('en-US', {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric'
-                          })}
-                        </span>
-                        <span className={`text-sm font-medium px-2 py-0.5 rounded ${record.status === 'Present'
-                          ? 'text-green-400 bg-green-400/10'
-                          : 'text-red-400 bg-red-400/10'
-                          }`}>
-                          {record.status}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              {/* Modal Tabs */}
+              <div className="flex border-b border-[#333]">
+                <button
+                  onClick={() => setModalTab('history')}
+                  className={`flex-1 py-3 text-sm font-medium transition ${modalTab === 'history' ? 'bg-[#1a1a1a] text-white border-b-2 border-blue-500' : 'text-[var(--text-dim)] hover:bg-[#111]'}`}
+                >
+                  Attendance History
+                </button>
+                <button
+                  onClick={() => setModalTab('works')}
+                  className={`flex-1 py-3 text-sm font-medium transition ${modalTab === 'works' ? 'bg-[#1a1a1a] text-white border-b-2 border-blue-500' : 'text-[var(--text-dim)] hover:bg-[#111]'}`}
+                >
+                  Works & Tasks
+                </button>
               </div>
 
-              {/* Modal Footer */}
-              <div className="p-4 border-t border-[#333] bg-[#0a0a0a]">
-                <button
-                  onClick={() => setHistoryModal(false)}
-                  className="w-auto py-2 bg-white text-black font-medium rounded-full active:scale-95 transition-transform text-sm"
-                >
-                  Close
-                </button>
+              <div className="overflow-y-auto p-4 flex-1">
+
+                {modalTab === 'history' && (
+                  <>
+                    {historyLoading ? (
+                      <div className="text-center py-8 text-[var(--text-dim)] animate-pulse">Loading records...</div>
+                    ) : historyData.length === 0 ? (
+                      <div className="text-center py-8 text-[var(--text-dim)]">No classes recorded yet.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {historyData.map((record, i) => (
+                          <div key={i} className="flex justify-between items-center p-3 rounded bg-[#111] border border-[#222]">
+                            <span className="text-sm text-gray-300">
+                              {new Date(record.date).toLocaleDateString('en-US', {
+                                weekday: 'short', month: 'short', day: 'numeric'
+                              })}
+                            </span>
+                            <span className={`text-sm font-medium px-2 py-0.5 rounded ${record.status === 'Present'
+                              ? 'text-green-400 bg-green-400/10'
+                              : 'text-red-400 bg-red-400/10'
+                              }`}>
+                              {record.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {modalTab === 'works' && (
+                  <div className="space-y-3">
+                    {subjectWorks.length === 0 ? (
+                      <div className="text-center py-8 text-[var(--text-dim)]">
+                        <p>No assignments or notices for this subject.</p>
+                      </div>
+                    ) : (
+                      subjectWorks.map((work) => {
+                        const status = getDeadlineStatus(work.dueDate);
+                        return (
+                          <div key={work._id} className="card p-3 border border-[#333]">
+                            <div className="flex justify-between items-start mb-1">
+                              <h4 className="font-semibold text-sm">{work.title}</h4>
+                              {status && (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${status.type === 'danger' ? 'bg-red-900/40 text-red-400' :
+                                    status.type === 'urgent' ? 'bg-orange-900/40 text-orange-400' :
+                                      status.type === 'warning' ? 'bg-yellow-900/40 text-yellow-400' :
+                                        'bg-green-900/40 text-green-400'
+                                  }`}>
+                                  {status.text}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-[var(--text-dim)] mb-2">{work.description}</p>
+                            <div className="flex justify-between items-center text-[10px] text-[var(--text-dim)] border-t border-[#222] pt-2">
+                              <span className="bg-[#222] px-2 py-0.5 rounded uppercase font-bold tracking-wider">{work.type}</span>
+                              <span>Posted {new Date(work.createdAt).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
               </div>
 
             </div>
@@ -259,7 +485,6 @@ export default function StudentDashboard() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
             <div className="bg-[#0a0a0a] border border-[#333] w-full max-w-md rounded-lg shadow-2xl overflow-hidden">
 
-              {/* Modal Header */}
               <div className="p-4 border-b border-[#333] flex justify-between items-center">
                 <h3 className="font-bold text-lg">Report Attendance Issue</h3>
                 <button
@@ -270,7 +495,6 @@ export default function StudentDashboard() {
                 </button>
               </div>
 
-              {/* Modal Body */}
               <form onSubmit={submitReport} className="p-4 space-y-4">
                 <div>
                   <label className="text-sm text-[var(--text-dim)] block mb-2">Date of Issue</label>
@@ -359,9 +583,6 @@ export default function StudentDashboard() {
                       <p className="text-sm text-[var(--text-dim)]">{report.adminResponse}</p>
                     </div>
                   )}
-                  <p className="text-xs text-[var(--text-dim)] mt-2">
-                    Submitted {new Date(report.createdAt).toLocaleDateString()}
-                  </p>
                 </div>
               ))}
             </div>

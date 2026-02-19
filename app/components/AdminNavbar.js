@@ -26,10 +26,10 @@ export default function AdminNavbar({ title = "Admin Panel" }) {
                         Dashboard
                     </button>
                     <button
-                        onClick={() => router.push('/admin/timetable')}
+                        onClick={() => router.push('/admin/subjects')}
                         className="text-xs px-3 py-2 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100"
                     >
-                        Timetable
+                        Subjects
                     </button>
                     <button
                         onClick={handleLogout}

@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 
-export default function Calendar({ selectedDate, onSelectDate, attendanceDates = [], multiSelect = false, selectedDates = [], allowFuture = false, examDates = [], holidayDates = [] }) {
+export default function Calendar({ selectedDate, onSelectDate, attendanceDates = [], taskDates = [], multiSelect = false, selectedDates = [], allowFuture = false, enableAllDates = false }) {
     const [currentMonth, setCurrentMonth] = useState(new Date());
 
     const daysInMonth = new Date(
@@ -52,13 +52,7 @@ export default function Calendar({ selectedDate, onSelectDate, attendanceDates =
         return attendanceDates.includes(formatDate(day));
     };
 
-    const isExam = (day) => {
-        return examDates.includes(formatDate(day));
-    };
 
-    const isHoliday = (day) => {
-        return holidayDates.includes(formatDate(day));
-    };
 
     return (
         <div className="card">
@@ -97,10 +91,17 @@ export default function Calendar({ selectedDate, onSelectDate, attendanceDates =
                     const dateStr = formatDate(day);
                     const today = new Date().toISOString().split('T')[0];
 
-                    // v2: Fixed - allows today for both modes
-                    // If allowFuture=true (bunk planning), block past dates (not today)
-                    // Otherwise (normal attendance), block future dates (not today)
-                    const isDisabled = allowFuture ? (dateStr < today) : (dateStr > today);
+                    // If enableAllDates=true, allow everything
+                    // Else if allowFuture=true (bunk), block past (except today)
+                    // Else (attendance), block future (except today)
+                    let isDisabled = false;
+                    if (!enableAllDates) {
+                        isDisabled = allowFuture ? (dateStr < today) : (dateStr > today);
+                    }
+
+                    const hasData = attendanceDates.includes(dateStr);
+                    const hasTask = taskDates.includes(dateStr);
+                    const isSelectedDate = isSelected(day);
 
                     return (
                         <button
@@ -108,23 +109,24 @@ export default function Calendar({ selectedDate, onSelectDate, attendanceDates =
                             onClick={() => !isDisabled && onSelectDate(dateStr)}
                             disabled={isDisabled}
                             className={`
-                aspect-square rounded-md flex items-center justify-center text-sm font-medium transition relative
-                ${isSelected(day) ? (multiSelect ? 'bg-orange-500 text-white' : 'bg-blue-500 text-white') : ''}
-                ${isToday(day) && !isSelected(day) ? 'border-2 border-blue-400' : ''}
-                ${isHoliday(day) && !isSelected(day) ? 'bg-green-500/30 text-green-300' : ''}
-                ${hasAttendance(day) && !isSelected(day) && !isHoliday(day) ? 'bg-green-900/20 text-green-400' : ''}
-                ${isDisabled ? 'text-[var(--text-dim)] opacity-30 cursor-not-allowed' : 'hover:bg-white/10 cursor-pointer'}
-                ${!isSelected(day) && !hasAttendance(day) && !isDisabled && !isHoliday(day) ? 'text-white' : ''}
+                aspect-square rounded-md flex items-center justify-center text-sm font-medium transition relative select-none
+                ${isSelectedDate ? (multiSelect ? 'bg-orange-500 text-white' : 'bg-blue-500 text-white') : ''}
+                ${isToday(day) && !isSelectedDate ? 'border-2 border-blue-400' : ''}
+                ${hasData && !isSelectedDate && !isDisabled ? 'bg-green-900/20 text-green-400' : ''}
+                ${hasTask && !isSelectedDate && !isDisabled ? 'bg-purple-900/20 text-purple-400 border border-purple-500/30' : ''}
+                ${hasData && isDisabled ? 'text-green-500/60 opacity-60 cursor-not-allowed' : ''}
+                ${isDisabled && !hasData && !hasTask ? 'text-[var(--text-dim)] opacity-30 cursor-not-allowed' : ''}
+                ${!isDisabled && !isSelectedDate && !hasData && !hasTask ? 'hover:bg-white/10 cursor-pointer text-white' : ''}
               `}
                         >
                             {day}
                             {/* Green dot for attendance marked */}
-                            {hasAttendance(day) && !isSelected(day) && (
-                                <div className="absolute top-0.5 right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full shadow-lg"></div>
+                            {hasData && !isSelectedDate && (
+                                <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-green-500 rounded-full shadow-lg"></div>
                             )}
-                            {/* Red dot for exams */}
-                            {isExam(day) && !isSelected(day) && (
-                                <div className="absolute top-0.5 right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full shadow-lg"></div>
+                            {/* Purple dot for tasks */}
+                            {hasTask && !isSelectedDate && (
+                                <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-purple-500 rounded-full shadow-lg"></div>
                             )}
                         </button>
                     );

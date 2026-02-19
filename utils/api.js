@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api',
 });
 
 
@@ -25,7 +25,7 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       localStorage.removeItem('adminClassId');
 
-      if (window.location.pathname.startsWith('/admin')) {
+      if (window.location.pathname.startsWith('/admin') && window.location.pathname !== '/admin/login') {
         window.location.href = '/admin/login';
       }
     }
