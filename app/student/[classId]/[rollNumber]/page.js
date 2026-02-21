@@ -33,7 +33,10 @@ export default function StudentDashboard() {
 
   const swrConfig = {
     revalidateOnFocus: false,
-    dedupingInterval: 30000
+    dedupingInterval: 30000,
+    shouldRetryOnError: true,
+    errorRetryCount: 3,
+    errorRetryInterval: 5000
   };
 
   const { data, error, isLoading: reportLoading } = useSWR(
@@ -81,7 +84,13 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     if (error) {
-      notify({ message: "Student not found or Server Error", type: 'error' });
+      const status = error?.response?.status;
+      notify({
+        message: status === 503
+          ? "Server is busy, retrying..."
+          : "Student not found or Server Error",
+        type: 'error'
+      });
     }
   }, [error]);
 

@@ -1,43 +1,69 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
 import Calendar from '@/app/components/Calendar';
+import useSWR from 'swr';
 
 export default function StudentAttention() {
     const params = useParams();
     const { classId, rollNumber } = params;
     const router = useRouter();
-    const [loading, setLoading] = useState(true);
-    const [className, setClassName] = useState('');
-    const [announcements, setAnnouncements] = useState([]);
     const [filterSubject, setFilterSubject] = useState('all');
     const [selectedDate, setSelectedDate] = useState(null); // YYYY-MM-DD
-    const [subjects, setSubjects] = useState([]);
+    const fetcher = (url) => api.get(url).then((res) => res.data);
+    const reportKey = classId && rollNumber ? `/student/report/${classId}/${rollNumber}` : null;
+    const announcementsKey = classId ? `/announcements/${classId}` : null;
+    const reportCacheKey = classId && rollNumber ? `cls_config_${classId}_${rollNumber}` : null;
+    const subjectCacheKey = classId ? `cls_subjects_${classId}` : null;
 
-    useEffect(() => {
-        if (!classId || !rollNumber) return;
+    const getCachedReport = () => {
+        if (typeof window === 'undefined' || !reportCacheKey) return null;
+        try {
+            return JSON.parse(localStorage.getItem(reportCacheKey) || 'null');
+        } catch {
+            return null;
+        }
+    };
 
-        // Fetch class info
-        api.get(`/student/report/${classId}/${rollNumber}`)
-            .then(res => {
-                setClassName(res.data.className);
-                const subs = (res.data.subjects || []).map(s => ({ _id: s._id, name: s.subjectName }));
-                setSubjects(subs);
-            })
-            .catch(() => { });
+    const swrConfig = {
+        revalidateOnFocus: false,
+        dedupingInterval: 30000,
+        shouldRetryOnError: true,
+        errorRetryCount: 3,
+        errorRetryInterval: 5000
+    };
 
-        // Fetch announcements
-        api.get(`/announcements/${classId}`)
-            .then(res => {
-                setAnnouncements(res.data.announcements || []);
-                setLoading(false);
-            })
-            .catch(() => {
-                setLoading(false);
-            });
-    }, [classId, rollNumber]);
+    const { data: reportData, isLoading: reportLoading } = useSWR(
+        reportKey,
+        fetcher,
+        {
+            ...swrConfig,
+            fallbackData: getCachedReport(),
+            onSuccess: (resData) => {
+                if (typeof window !== 'undefined') {
+                    if (reportCacheKey) {
+                        localStorage.setItem(reportCacheKey, JSON.stringify(resData));
+                    }
+                    if (subjectCacheKey && Array.isArray(resData?.subjects)) {
+                        localStorage.setItem(subjectCacheKey, JSON.stringify(resData.subjects));
+                    }
+                }
+            }
+        }
+    );
+
+    const { data: announcementsResponse, isLoading: announcementsLoading } = useSWR(
+        announcementsKey,
+        fetcher,
+        swrConfig
+    );
+
+    const className = reportData?.className || '';
+    const subjects = (reportData?.subjects || []).map((s) => ({ _id: s._id, name: s.subjectName }));
+    const announcements = announcementsResponse?.announcements || [];
+    const loading = (reportLoading && !reportData) || (announcementsLoading && !announcementsResponse);
 
     const handleLogout = () => {
         localStorage.removeItem('studentClassId');
@@ -90,7 +116,7 @@ export default function StudentAttention() {
     };
 
     // Apply filters
-    let filtered = announcements;
+    let filtered = [...announcements];
 
     // Date Filter
     if (selectedDate) {

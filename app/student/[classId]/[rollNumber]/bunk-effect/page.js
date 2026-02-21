@@ -4,38 +4,72 @@ import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
 import { useNotification } from '@/app/components/Notification';
+import useSWR from 'swr';
 
 export default function BunkEffect() {
     const params = useParams();
     const { classId, rollNumber } = params;
     const router = useRouter();
     const notify = useNotification();
-    const [loading, setLoading] = useState(true);
-    const [className, setClassName] = useState('');
-    const [subjects, setSubjects] = useState([]);
     const [bunkCounts, setBunkCounts] = useState({});
     const [minPercentage, setMinPercentage] = useState(75);
 
     useEffect(() => {
-        if (!classId || !rollNumber) return;
-
         // Load student's own min percentage from localStorage
         const saved = localStorage.getItem('studentMinPercentage');
         if (saved) setMinPercentage(parseInt(saved));
+    }, []);
 
-        // Fetch current attendance report
-        api.get(`/student/report/${classId}/${rollNumber}`)
-            .then(res => {
-                setClassName(res.data.className);
-                setSubjects(res.data.subjects || []);
-                setLoading(false);
-            })
-            .catch(err => {
-                console.error("Fetch Error:", err);
-                notify({ message: "Failed to load data", type: 'error' });
-                setLoading(false);
-            });
-    }, [classId, rollNumber]);
+    const fetcher = (url) => api.get(url).then((res) => res.data);
+    const reportKey = classId && rollNumber ? `/student/report/${classId}/${rollNumber}` : null;
+    const reportCacheKey = classId && rollNumber ? `cls_config_${classId}_${rollNumber}` : null;
+    const subjectCacheKey = classId ? `cls_subjects_${classId}` : null;
+
+    const getCachedReport = () => {
+        if (typeof window === 'undefined' || !reportCacheKey) return null;
+        try {
+            return JSON.parse(localStorage.getItem(reportCacheKey) || 'null');
+        } catch {
+            return null;
+        }
+    };
+
+    const swrConfig = {
+        revalidateOnFocus: false,
+        dedupingInterval: 30000,
+        shouldRetryOnError: true,
+        errorRetryCount: 3,
+        errorRetryInterval: 5000
+    };
+
+    const { data: reportData, error: reportError, isLoading: reportLoading } = useSWR(
+        reportKey,
+        fetcher,
+        {
+            ...swrConfig,
+            fallbackData: getCachedReport(),
+            onSuccess: (resData) => {
+                if (typeof window !== 'undefined') {
+                    if (reportCacheKey) {
+                        localStorage.setItem(reportCacheKey, JSON.stringify(resData));
+                    }
+                    if (subjectCacheKey && Array.isArray(resData?.subjects)) {
+                        localStorage.setItem(subjectCacheKey, JSON.stringify(resData.subjects));
+                    }
+                }
+            }
+        }
+    );
+
+    useEffect(() => {
+        if (reportError) {
+            notify({ message: "Failed to load data", type: 'error' });
+        }
+    }, [reportError, notify]);
+
+    const className = reportData?.className || '';
+    const subjects = reportData?.subjects || [];
+    const loading = reportLoading && !reportData;
 
     const handleLogout = () => {
         localStorage.removeItem('studentClassId');
