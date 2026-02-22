@@ -15,7 +15,8 @@ import Cropper from "react-cropper";
 import "cropperjs/dist/cropper.css";
 const sanitizeRollNumber = (value) => {
     if (value === undefined || value === null) return null;
-    const cleaned = String(value).trim();
+    // Remove invisible characters, spaces, and accidental quotes
+    const cleaned = String(value).trim().replace(/['"]/g, '');
     return cleaned || null;
 };
 
@@ -294,13 +295,63 @@ export default function AdminDashboard() {
         setImageToCrop(null);
 
         try {
-            const res = await api.post('/ai/scan-logbook', { imageBase64: compressedBase64 });
-            const rollNumbersStr = res.data.rollNumbers || '';
-            if (!rollNumbersStr) {
-                notify({ message: "No numbers found in the image", type: 'error' });
+            if (currentIndex === 'FULL_PAGE') {
+                const res = await api.post('/ai/scan-full-logbook', { imageBase64: compressedBase64 });
+                const newPeriodsData = res.data.periods || {};
+
+                if (Object.keys(newPeriodsData).length === 0) {
+                    notify({ message: "No periods found in the image", type: 'error' });
+                } else {
+                    const sortedPeriods = Object.keys(newPeriodsData)
+                        .map(p => parseInt(p, 10))
+                        .filter(p => !isNaN(p))
+                        .sort((a, b) => a - b);
+
+                    if (sortedPeriods.length === 0) {
+                        notify({ message: "No valid period numbers found. Check image.", type: 'error' });
+                    } else {
+                        const generatedPeriods = sortedPeriods.map((periodNum) => ({
+                            period: periodNum,
+                            subjectId: "",
+                            subjectName: ""
+                        }));
+
+                        const newAbsentees = {};
+                        const newAbsentInputs = {};
+
+                        sortedPeriods.forEach((periodNum, arrayIndex) => {
+                            const rolls = newPeriodsData[periodNum] || [];
+                            const uniqueValidRolls = [];
+                            const seen = new Set();
+                            rolls.forEach(r => {
+                                const strRoll = String(r);
+                                if (allowedRollSet.has(strRoll) && !seen.has(strRoll)) {
+                                    seen.add(strRoll);
+                                    uniqueValidRolls.push(strRoll);
+                                }
+                            });
+
+                            const sorted = sortRollNumbers(uniqueValidRolls);
+                            newAbsentees[arrayIndex] = sorted;
+                            newAbsentInputs[arrayIndex] = sorted.join(', ');
+                        });
+
+                        setPeriods(generatedPeriods);
+                        setAbsentees(newAbsentees);
+                        setAbsentInputs(newAbsentInputs);
+                        setHasModifications(true);
+                        notify({ message: "Full page scanned successfully! Please select subjects.", type: 'success' });
+                    }
+                }
             } else {
-                handleBulkAbsentInput(currentIndex, rollNumbersStr);
-                notify({ message: "Logbook scanned successfully!", type: 'success' });
+                const res = await api.post('/ai/scan-logbook', { imageBase64: compressedBase64 });
+                const rollNumbersStr = res.data.rollNumbers || '';
+                if (!rollNumbersStr) {
+                    notify({ message: "No numbers found in the image", type: 'error' });
+                } else {
+                    handleBulkAbsentInput(currentIndex, rollNumbersStr);
+                    notify({ message: "Logbook scanned successfully!", type: 'success' });
+                }
             }
         } catch (apiErr) {
             const errorMsg = apiErr.response?.data?.details || apiErr.response?.data?.error || apiErr.message || "Please check server.";
@@ -314,6 +365,15 @@ export default function AdminDashboard() {
     const cancelCrop = () => {
         setImageToCrop(null);
         setScanningPeriodIndex(null);
+    };
+
+    const handleFullPageScanClick = () => {
+        if (isDateLocked) return;
+        setScanningPeriodIndex('FULL_PAGE');
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+            fileInputRef.current.click();
+        }
     };
 
     const handleZoomIn = () => cropperRef.current?.cropper.zoom(0.1);
@@ -471,21 +531,39 @@ export default function AdminDashboard() {
 
     const addStudentToClass = async () => {
         if (!classId || addingStudent) return;
-        const rollNumber = sanitizeRollNumber(newStudentRoll);
 
-        if (!rollNumber) {
-            notify({ message: 'Enter a valid roll number.', type: 'error' });
+        const parseRolls = (input) => {
+            const rolls = new Set();
+            input.split(/[\n,]+/).forEach(part => {
+                part = part.trim();
+                if (part.includes('-')) {
+                    const [start, end] = part.split('-').map(str => parseInt(str.trim(), 10));
+                    if (!isNaN(start) && !isNaN(end) && start <= end) {
+                        for (let i = start; i <= end; i++) rolls.add(String(i));
+                    }
+                } else if (part) {
+                    rolls.add(part);
+                }
+            });
+            return Array.from(rolls).filter(Boolean).map(sanitizeRollNumber).filter(Boolean);
+        };
+
+        const rollArray = parseRolls(newStudentRoll);
+
+        if (rollArray.length === 0) {
+            notify({ message: 'Enter valid roll numbers.', type: 'error' });
             return;
         }
 
         setAddingStudent(true);
         try {
-            const res = await api.patch(`/classes/${classId}/students`, { rollNumber });
+            const res = await api.patch(`/class/${classId}/students`, { rollNumbers: rollArray });
             const updatedRolls = normalizeClassRollNumbers({ rollNumbers: res.data.rollNumbers });
             setClassRollNumbers(updatedRolls);
             setNewStudentRoll('');
             setShowAddStudentModal(false);
-            notify({ message: `Student ${rollNumber} added successfully.`, type: 'success' });
+            const msg = rollArray.length > 1 ? `${rollArray.length} students added successfully.` : `Student ${rollArray[0]} added successfully.`;
+            notify({ message: msg, type: 'success' });
         } catch (err) {
             if (err.response?.status === 409) {
                 notify({ message: err.response?.data?.error || 'Roll number already exists in this class.', type: 'error' });
@@ -663,13 +741,13 @@ export default function AdminDashboard() {
                             <p className="text-[var(--text-dim)] text-xs mt-1">{classRollNumbers.length} students</p>
                         </div>
                         <div className="flex flex-col items-end gap-2">
-                            <button
+                            {/* <button
                                 onClick={() => setShowAddStudentModal(true)}
                                 className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium hover:bg-emerald-500/15 transition"
                             >
                                 <Plus className="w-3.5 h-3.5" />
                                 Add Student
-                            </button>
+                            </button> */}
                             {pendingReports > 0 && (
                                 <button
                                     onClick={() => router.push(`/admin/reports/${classId}`)}
@@ -931,19 +1009,34 @@ export default function AdminDashboard() {
                 )}
 
                 {/* ─── Add Class Button ─── */}
-                <div className="text-center my-6">
+                <div className="text-center my-6 flex flex-wrap gap-3 justify-center">
                     <button
                         onClick={addPeriod}
-                        className="btn btn-outline inline-flex w-auto px-8 items-center gap-2"
+                        className="btn btn-outline inline-flex w-auto px-6 items-center gap-2"
                         disabled={isDateLocked}
                     >
                         <Plus className="w-4 h-4" />
                         Add Period
                     </button>
+                    {!isDateLocked && (
+                        <button
+                            onClick={handleFullPageScanClick}
+                            className="btn bg-purple-500/10 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 inline-flex w-auto px-6 items-center gap-2 transition"
+                            disabled={isScanning}
+                            title="Scan entire logbook page"
+                        >
+                            {isScanning && scanningPeriodIndex === 'FULL_PAGE' ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Camera className="w-4 h-4" />
+                            )}
+                            Scan Full Page
+                        </button>
+                    )}
                     {periods.length === 0 && (
-                        <p className="text-[var(--text-dim)] text-sm mt-4">
+                        <p className="text-[var(--text-dim)] text-sm mt-4 w-full">
                             No classes scheduled for {getDayName(selectedDate)}.<br />
-                            <span className="text-xs">Tap "Add Period" to manually add classes.</span>
+                            <span className="text-xs">Tap "Add Period" or "Scan Full Page" to begin.</span>
                         </p>
                     )}
                 </div>
@@ -974,20 +1067,21 @@ export default function AdminDashboard() {
                 )}
 
                 {showAddStudentModal && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-                        <div className="w-full max-w-sm glass-card !mb-0">
-                            <h2 className="text-lg font-semibold mb-2">Add Student</h2>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
+                        <div className="w-full max-w-md glass-card !mb-0 shadow-2xl">
+                            <h2 className="text-xl font-bold mb-2">Add Students</h2>
                             <p className="text-sm text-[var(--text-dim)] mb-4">
-                                Add one roll number to this class. Duplicate values are blocked.
+                                Add single roll numbers, comma-separated lists, or ranges. <br />
+                                <span className="opacity-70 text-xs">Example: "1", "1,5,10", or "1-60"</span>
                             </p>
-                            <input
-                                type="text"
-                                className="input mb-4"
-                                placeholder="Enter roll number"
+                            <textarea
+                                className="input mb-4 min-h-[100px] resize-none whitespace-pre-wrap"
+                                placeholder="e.g. 1-60  or  12, 14, 15"
                                 value={newStudentRoll}
                                 onChange={(e) => setNewStudentRoll(e.target.value)}
                                 disabled={addingStudent}
-                            />
+                                autoFocus
+                            ></textarea>
                             <div className="flex justify-end gap-2">
                                 <button
                                     type="button"

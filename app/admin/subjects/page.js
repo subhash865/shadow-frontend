@@ -52,13 +52,20 @@ export default function SubjectManager() {
 
         try {
             const res = await api.post(`/class/${classId}/add-subject`, { name });
+
+            // Handle custom 200-error to avoid red console logs
+            if (res.data.error) {
+                notify({ message: res.data.error, type: 'error' });
+                setIsAdding(false);
+                return;
+            }
+
             // Refresh full list from server to ensure consistency
             const refresh = await api.get(`/class/${classId}`);
             setSubjects(refresh.data.subjects || []);
             setNewSubjectName('');
             notify({ message: `"${name}" added successfully!`, type: 'success' });
         } catch (err) {
-            console.error('Add subject error:', err);
             notify({ message: err.response?.data?.error || 'Failed to add subject', type: 'error' });
         } finally {
             setIsAdding(false);
@@ -92,12 +99,19 @@ export default function SubjectManager() {
 
         try {
             const res = await api.put(`/class/${classId}/edit-subject/${subjectId}`, { name: editName });
+
+            // Handle custom 200-error to avoid red console logs
+            if (res.data.error) {
+                notify({ message: res.data.error, type: 'error' });
+                return;
+            }
+
             setSubjects(subjects.map(s => s._id === subjectId ? { ...s, name: editName } : s));
             setEditingId(null);
             setEditName('');
             notify({ message: 'Subject updated!', type: 'success' });
         } catch (err) {
-            notify({ message: 'Failed to update subject', type: 'error' });
+            notify({ message: err.response?.data?.error || 'Failed to update subject', type: 'error' });
         }
     };
 
