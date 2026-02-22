@@ -46,6 +46,8 @@ const normalizeClassRollNumbers = (classData) => {
     return [];
 };
 
+const AUTO_RELOCK_MS = 2 * 60 * 1000;
+
 export default function AdminDashboard() {
     const router = useRouter();
     const notify = useNotification();
@@ -72,7 +74,9 @@ export default function AdminDashboard() {
     const [newStudentRoll, setNewStudentRoll] = useState('');
     const [addingStudent, setAddingStudent] = useState(false);
     const [isDateLocked, setIsDateLocked] = useState(false);
+    const [autoRelockArmed, setAutoRelockArmed] = useState(false);
     const fileInputRef = useRef(null);
+    const autoRelockTimerRef = useRef(null);
     const allowedRollSet = new Set(classRollNumbers);
 
     // Check if viewing past date
@@ -116,6 +120,7 @@ export default function AdminDashboard() {
                 setAbsentInputs(newAbsentInputs);
                 setHasModifications(false);
                 setIsDateLocked(true);
+                setAutoRelockArmed(false);
 
                 if (res.data.updatedAt) {
                     setLastModified(new Date(res.data.updatedAt));
@@ -128,6 +133,7 @@ export default function AdminDashboard() {
                 setHasModifications(false);
                 setLastModified(null);
                 setIsDateLocked(false);
+                setAutoRelockArmed(false);
             }
         } catch (err) {
             // Error fetching attendance — reset to empty
@@ -137,6 +143,7 @@ export default function AdminDashboard() {
             setHasModifications(false);
             setLastModified(null);
             setIsDateLocked(false);
+            setAutoRelockArmed(false);
         }
     }, []);
 
@@ -192,6 +199,43 @@ export default function AdminDashboard() {
             setShowCalendar(false);
         }
     }, [selectedDate, classId, subjects, loadAttendanceForDate]);
+
+    const clearAutoRelockTimer = useCallback(() => {
+        if (autoRelockTimerRef.current) {
+            clearTimeout(autoRelockTimerRef.current);
+            autoRelockTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        if (isDateLocked || !autoRelockArmed) {
+            clearAutoRelockTimer();
+            return;
+        }
+
+        const resetAutoRelockTimer = () => {
+            clearAutoRelockTimer();
+            autoRelockTimerRef.current = window.setTimeout(() => {
+                setIsDateLocked(true);
+                setAutoRelockArmed(false);
+                notify({ message: 'Editing auto-locked after 2 minutes of inactivity.', type: 'success' });
+            }, AUTO_RELOCK_MS);
+        };
+
+        const activityEvents = ['pointerdown', 'keydown', 'input', 'touchstart'];
+        activityEvents.forEach((eventName) => {
+            window.addEventListener(eventName, resetAutoRelockTimer, true);
+        });
+
+        resetAutoRelockTimer();
+
+        return () => {
+            activityEvents.forEach((eventName) => {
+                window.removeEventListener(eventName, resetAutoRelockTimer, true);
+            });
+            clearAutoRelockTimer();
+        };
+    }, [isDateLocked, autoRelockArmed, notify, clearAutoRelockTimer]);
 
     const handleLogout = () => {
         localStorage.removeItem('adminClassId');
@@ -382,6 +426,7 @@ export default function AdminDashboard() {
         if (!confirmed) return;
 
         setIsDateLocked(false);
+        setAutoRelockArmed(true);
         notify({ message: 'Editing unlocked. Save after making changes.', type: 'success' });
     };
 
@@ -444,6 +489,7 @@ export default function AdminDashboard() {
             notify({ message: "Attendance Saved Successfully ✓", type: 'success' });
             setHasModifications(false);
             setIsDateLocked(true);
+            setAutoRelockArmed(false);
 
             // Refresh attendance dates list
             api.get(`/attendance/dates/${classId}`)
@@ -557,6 +603,15 @@ export default function AdminDashboard() {
                             <LockOpen className="w-3.5 h-3.5" />
                             Unlock to Edit
                         </button>
+                    </div>
+                )}
+
+                {!isDateLocked && autoRelockArmed && periods.length > 0 && (
+                    <div className="mb-5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3">
+                        <div className="flex items-start gap-2 text-blue-200 text-sm">
+                            <LockOpen className="w-4 h-4 mt-0.5" />
+                            <span>Editing is unlocked. It will auto-lock after 2 minutes of inactivity.</span>
+                        </div>
                     </div>
                 )}
 
