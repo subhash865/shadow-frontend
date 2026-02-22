@@ -3,13 +3,48 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Save, Plus, X, Calendar as CalendarIcon,
-    RotateCcw, FileText, Clock, Users, CheckCircle,
+    RotateCcw, FileText, Clock, CheckCircle,
     AlertTriangle, Loader2, Camera
 } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
 import Calendar from '@/app/components/Calendar';
 import api from '@/utils/api';
 import { useNotification } from '@/app/components/Notification';
+
+const sanitizeRollNumber = (value) => {
+    if (value === undefined || value === null) return null;
+    const cleaned = String(value).trim();
+    return cleaned || null;
+};
+
+const sortRollNumbers = (rolls) => {
+    return [...rolls].sort((a, b) =>
+        String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' })
+    );
+};
+
+const normalizeClassRollNumbers = (classData) => {
+    const rawRolls = Array.isArray(classData?.rollNumbers) ? classData.rollNumbers : [];
+    const seen = new Set();
+    const normalizedRolls = rawRolls
+        .map((roll) => sanitizeRollNumber(roll))
+        .filter((roll) => {
+            if (!roll || seen.has(roll)) return false;
+            seen.add(roll);
+            return true;
+        });
+
+    if (normalizedRolls.length > 0) {
+        return sortRollNumbers(normalizedRolls);
+    }
+
+    const totalStudents = Number(classData?.totalStudents);
+    if (Number.isInteger(totalStudents) && totalStudents > 0) {
+        return Array.from({ length: totalStudents }, (_, index) => String(index + 1));
+    }
+
+    return [];
+};
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -27,13 +62,17 @@ export default function AdminDashboard() {
     const [hasModifications, setHasModifications] = useState(false);
     const [isViewingPastDate, setIsViewingPastDate] = useState(false);
     const [lastModified, setLastModified] = useState(null);
-    const [classStrength, setClassStrength] = useState(70);
+    const [classRollNumbers, setClassRollNumbers] = useState([]);
     const [saving, setSaving] = useState(false);
     const [pendingReports, setPendingReports] = useState(0);
     const [confirmRemovePeriod, setConfirmRemovePeriod] = useState(null);
     const [isScanning, setIsScanning] = useState(false);
     const [scanningPeriodIndex, setScanningPeriodIndex] = useState(null);
+    const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+    const [newStudentRoll, setNewStudentRoll] = useState('');
+    const [addingStudent, setAddingStudent] = useState(false);
     const fileInputRef = useRef(null);
+    const allowedRollSet = new Set(classRollNumbers);
 
     // Check if viewing past date
     const checkIfPastDate = (date) => {
@@ -62,8 +101,13 @@ export default function AdminDashboard() {
                 const newAbsentees = {};
                 const newAbsentInputs = {};
                 res.data.periods.forEach((period, index) => {
-                    newAbsentees[index] = period.absentRollNumbers || [];
-                    newAbsentInputs[index] = (period.absentRollNumbers || []).sort((a, b) => a - b).join(', ');
+                    const normalizedRolls = sortRollNumbers(
+                        (period.absentRollNumbers || [])
+                            .map((roll) => sanitizeRollNumber(roll))
+                            .filter(Boolean)
+                    );
+                    newAbsentees[index] = normalizedRolls;
+                    newAbsentInputs[index] = normalizedRolls.join(', ');
                 });
 
                 setPeriods(formattedPeriods);
@@ -111,10 +155,11 @@ export default function AdminDashboard() {
             api.get(`/reports/class/${storedClassId}`).catch(() => ({ data: { reports: [] } })),
         ]).then(([classRes, datesRes, reportsRes]) => {
             const subjectsList = classRes.data.subjects;
+            const normalizedClassRollNumbers = normalizeClassRollNumbers(classRes.data);
 
             setSubjects(subjectsList);
             setClassName(classRes.data.className);
-            setClassStrength(classRes.data.totalStudents || 70);
+            setClassRollNumbers(normalizedClassRollNumbers);
 
             // Format attendance dates
             const formattedDates = (datesRes.data.dates || []).map(dateStr => {
@@ -256,10 +301,10 @@ export default function AdminDashboard() {
 
             setAbsentInputs(prevInputs => ({
                 ...prevInputs,
-                [periodIdx]: newList.sort((a, b) => a - b).join(', ')
+                [periodIdx]: sortRollNumbers(newList).join(', ')
             }));
 
-            return { ...prev, [periodIdx]: newList };
+            return { ...prev, [periodIdx]: sortRollNumbers(newList) };
         });
         setHasModifications(true);
     };
@@ -273,13 +318,20 @@ export default function AdminDashboard() {
             return;
         }
 
-        const rollNumbers = inputValue
-            .split(',')
-            .map(str => parseInt(str.trim()))
-            .filter(num => !isNaN(num) && num >= 1 && num <= classStrength);
+        const uniqueRolls = [];
+        const seen = new Set();
+        inputValue
+            .split(/[,\n]/)
+            .map(str => sanitizeRollNumber(str))
+            .filter(Boolean)
+            .forEach((roll) => {
+                if (allowedRollSet.has(roll) && !seen.has(roll)) {
+                    seen.add(roll);
+                    uniqueRolls.push(roll);
+                }
+            });
 
-        const uniqueRolls = [...new Set(rollNumbers)];
-        setAbsentees(prev => ({ ...prev, [periodIdx]: uniqueRolls }));
+        setAbsentees(prev => ({ ...prev, [periodIdx]: sortRollNumbers(uniqueRolls) }));
         setHasModifications(true);
     };
 
@@ -294,17 +346,49 @@ export default function AdminDashboard() {
     const copyFromPrevious = (periodIdx) => {
         if (periodIdx === 0) return;
         const prevAbsentees = absentees[periodIdx - 1] || [];
-        setAbsentees(prev => ({ ...prev, [periodIdx]: [...prevAbsentees] }));
+        setAbsentees(prev => ({ ...prev, [periodIdx]: sortRollNumbers(prevAbsentees) }));
         setAbsentInputs(prev => ({
             ...prev,
-            [periodIdx]: prevAbsentees.sort((a, b) => a - b).join(', ')
+            [periodIdx]: sortRollNumbers(prevAbsentees).join(', ')
         }));
         setHasModifications(true);
         notify({ message: `Copied ${prevAbsentees.length} absentee(s) from P${periods[periodIdx - 1]?.period || periodIdx}`, type: 'success' });
     };
 
+    const addStudentToClass = async () => {
+        if (!classId || addingStudent) return;
+        const rollNumber = sanitizeRollNumber(newStudentRoll);
+
+        if (!rollNumber) {
+            notify({ message: 'Enter a valid roll number.', type: 'error' });
+            return;
+        }
+
+        setAddingStudent(true);
+        try {
+            const res = await api.patch(`/classes/${classId}/students`, { rollNumber });
+            const updatedRolls = normalizeClassRollNumbers({ rollNumbers: res.data.rollNumbers });
+            setClassRollNumbers(updatedRolls);
+            setNewStudentRoll('');
+            setShowAddStudentModal(false);
+            notify({ message: `Student ${rollNumber} added successfully.`, type: 'success' });
+        } catch (err) {
+            if (err.response?.status === 409) {
+                notify({ message: err.response?.data?.error || 'Roll number already exists in this class.', type: 'error' });
+            } else {
+                notify({ message: err.response?.data?.error || 'Failed to add student.', type: 'error' });
+            }
+        } finally {
+            setAddingStudent(false);
+        }
+    };
+
     const submitAttendance = async () => {
         if (!classId) return;
+        if (classRollNumbers.length === 0) {
+            notify({ message: "No students found in this class. Add students first.", type: 'error' });
+            return;
+        }
 
         const validPeriods = periods.filter(slot => slot.subjectId);
         if (validPeriods.length === 0) {
@@ -317,7 +401,7 @@ export default function AdminDashboard() {
             periodNum: slot.period,
             subjectId: slot.subjectId,
             subjectName: slot.subjectName,
-            absentRollNumbers: absentees[index] || []
+            absentRollNumbers: sortRollNumbers(absentees[index] || [])
         }));
 
         try {
@@ -393,17 +477,26 @@ export default function AdminDashboard() {
                                 Mark Attendance
                             </h1>
                             <p className="text-[var(--text-dim)] text-sm">{className}</p>
+                            <p className="text-[var(--text-dim)] text-xs mt-1">{classRollNumbers.length} students</p>
                         </div>
-                        {/* Pending reports badge */}
-                        {pendingReports > 0 && (
+                        <div className="flex flex-col items-end gap-2">
                             <button
-                                onClick={() => router.push(`/admin/reports/${classId}`)}
-                                className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium hover:bg-amber-500/15 transition"
+                                onClick={() => setShowAddStudentModal(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium hover:bg-emerald-500/15 transition"
                             >
-                                <FileText className="w-3.5 h-3.5" />
-                                {pendingReports} pending report{pendingReports > 1 ? 's' : ''}
+                                <Plus className="w-3.5 h-3.5" />
+                                Add Student
                             </button>
-                        )}
+                            {pendingReports > 0 && (
+                                <button
+                                    onClick={() => router.push(`/admin/reports/${classId}`)}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium hover:bg-amber-500/15 transition"
+                                >
+                                    <FileText className="w-3.5 h-3.5" />
+                                    {pendingReports} pending report{pendingReports > 1 ? 's' : ''}
+                                </button>
+                            )}
+                        </div>
                     </div>
 
 
@@ -454,7 +547,6 @@ export default function AdminDashboard() {
                     <div className="space-y-4">
                         {periods.map((slot, index) => {
                             const absentCount = (absentees[index] || []).length;
-                            const presentCount = classStrength - absentCount;
 
                             return (
                                 <div key={index} className="card animate-fade-in" style={{ position: 'relative', overflow: 'hidden' }}>
@@ -604,8 +696,7 @@ export default function AdminDashboard() {
 
                                     {/* Grid */}
                                     <div className="grid grid-cols-7 sm:grid-cols-10 gap-1.5">
-                                        {[...Array(classStrength)].map((_, i) => {
-                                            const roll = i + 1;
+                                        {classRollNumbers.map((roll) => {
                                             const isAbsent = (absentees[index] || []).includes(roll);
 
                                             return (
@@ -663,6 +754,53 @@ export default function AdminDashboard() {
                                     </>
                                 )}
                             </button>
+                        </div>
+                    </div>
+                )}
+
+                {showAddStudentModal && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                        <div className="w-full max-w-sm glass-card !mb-0">
+                            <h2 className="text-lg font-semibold mb-2">Add Student</h2>
+                            <p className="text-sm text-[var(--text-dim)] mb-4">
+                                Add one roll number to this class. Duplicate values are blocked.
+                            </p>
+                            <input
+                                type="text"
+                                className="input mb-4"
+                                placeholder="Enter roll number"
+                                value={newStudentRoll}
+                                onChange={(e) => setNewStudentRoll(e.target.value)}
+                                disabled={addingStudent}
+                            />
+                            <div className="flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowAddStudentModal(false);
+                                        setNewStudentRoll('');
+                                    }}
+                                    className="px-4 py-2 rounded-lg border border-white/10 text-[var(--text-dim)] hover:text-white hover:border-white/20 transition"
+                                    disabled={addingStudent}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={addStudentToClass}
+                                    className="btn btn-primary !w-auto px-4 py-2"
+                                    disabled={addingStudent}
+                                >
+                                    {addingStudent ? (
+                                        <span className="flex items-center gap-2">
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Adding...
+                                        </span>
+                                    ) : (
+                                        'Add Student'
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

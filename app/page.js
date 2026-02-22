@@ -206,7 +206,7 @@ export default function Home() {
 
                             <input
                                 id="student-roll-number"
-                                type="number"
+                                type="text"
                                 className="input mb-5"
                                 placeholder="Roll Number"
                                 value={rollNumber}
@@ -255,7 +255,7 @@ export default function Home() {
 
                                 <button
                                     id="admin-setup-btn"
-                                    onClick={() => router.push('/admin/setup')}
+                                    onClick={() => router.push('/admin/create')}
                                     className="w-full py-3.5 px-5 rounded-xl border border-emerald-500/20 bg-emerald-950/20 hover:bg-emerald-950/40 transition-all flex items-center justify-between group"
                                 >
                                     <div className="text-left">

@@ -210,7 +210,7 @@ export default function StudentDashboard() {
     try {
       if (editingReportId) {
         await api.patch(`/reports/edit/${editingReportId}`, {
-          studentRoll: parseInt(rollNumber),
+          studentRoll: String(rollNumber),
           date: reportDate,
           subjectId: reportSubjectId,
           subjectName: selectedSub?.subjectName || 'Unknown',
@@ -220,7 +220,7 @@ export default function StudentDashboard() {
       } else {
         await api.post('/reports/submit', {
           classId,
-          studentRoll: parseInt(rollNumber),
+          studentRoll: String(rollNumber),
           date: reportDate,
           subjectId: reportSubjectId,
           subjectName: selectedSub?.subjectName || 'Unknown',
