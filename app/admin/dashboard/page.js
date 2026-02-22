@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import {
     Save, Plus, X, Calendar as CalendarIcon,
     RotateCcw, FileText, Clock, CheckCircle,
-    AlertTriangle, Loader2, Camera
+    AlertTriangle, Loader2, Camera, Lock, LockOpen
 } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
 import Calendar from '@/app/components/Calendar';
@@ -71,6 +71,7 @@ export default function AdminDashboard() {
     const [showAddStudentModal, setShowAddStudentModal] = useState(false);
     const [newStudentRoll, setNewStudentRoll] = useState('');
     const [addingStudent, setAddingStudent] = useState(false);
+    const [isDateLocked, setIsDateLocked] = useState(false);
     const fileInputRef = useRef(null);
     const allowedRollSet = new Set(classRollNumbers);
 
@@ -114,6 +115,7 @@ export default function AdminDashboard() {
                 setAbsentees(newAbsentees);
                 setAbsentInputs(newAbsentInputs);
                 setHasModifications(false);
+                setIsDateLocked(true);
 
                 if (res.data.updatedAt) {
                     setLastModified(new Date(res.data.updatedAt));
@@ -125,6 +127,7 @@ export default function AdminDashboard() {
                 setAbsentInputs({});
                 setHasModifications(false);
                 setLastModified(null);
+                setIsDateLocked(false);
             }
         } catch (err) {
             // Error fetching attendance — reset to empty
@@ -133,6 +136,7 @@ export default function AdminDashboard() {
             setAbsentInputs({});
             setHasModifications(false);
             setLastModified(null);
+            setIsDateLocked(false);
         }
     }, []);
 
@@ -196,6 +200,7 @@ export default function AdminDashboard() {
     };
 
     const handleCameraButtonClick = (periodIdx) => {
+        if (isDateLocked) return;
         setScanningPeriodIndex(periodIdx);
         if (fileInputRef.current) {
             fileInputRef.current.click();
@@ -203,6 +208,7 @@ export default function AdminDashboard() {
     };
 
     const handleImageUpload = async (e) => {
+        if (isDateLocked) return;
         const file = e.target.files?.[0];
         if (!file || scanningPeriodIndex === null) return;
 
@@ -238,6 +244,7 @@ export default function AdminDashboard() {
     };
 
     const addPeriod = () => {
+        if (isDateLocked) return;
         const nextPeriodNum = periods.length > 0
             ? Math.max(...periods.map(p => p.period)) + 1
             : 1;
@@ -246,6 +253,7 @@ export default function AdminDashboard() {
     };
 
     const requestRemovePeriod = (periodNum) => {
+        if (isDateLocked) return;
         setConfirmRemovePeriod(periodNum);
     };
 
@@ -280,6 +288,7 @@ export default function AdminDashboard() {
     };
 
     const updatePeriod = (periodNum, subjectId) => {
+        if (isDateLocked) return;
         const subject = subjects.find(s => s._id === subjectId);
         setPeriods(prev => prev.map(slot =>
             slot.period === periodNum
@@ -290,6 +299,7 @@ export default function AdminDashboard() {
     };
 
     const toggleAbsent = (periodIdx, rollNo) => {
+        if (isDateLocked) return;
         setAbsentees(prev => {
             const currentList = prev[periodIdx] || [];
             let newList;
@@ -310,6 +320,7 @@ export default function AdminDashboard() {
     };
 
     const handleBulkAbsentInput = (periodIdx, inputValue) => {
+        if (isDateLocked) return;
         setAbsentInputs(prev => ({ ...prev, [periodIdx]: inputValue }));
 
         if (!inputValue.trim()) {
@@ -337,6 +348,7 @@ export default function AdminDashboard() {
 
     // Mark all present for a period (clear absentees)
     const markAllPresent = (periodIdx) => {
+        if (isDateLocked) return;
         setAbsentees(prev => ({ ...prev, [periodIdx]: [] }));
         setAbsentInputs(prev => ({ ...prev, [periodIdx]: '' }));
         setHasModifications(true);
@@ -344,6 +356,7 @@ export default function AdminDashboard() {
 
     // Copy absentees from previous period
     const copyFromPrevious = (periodIdx) => {
+        if (isDateLocked) return;
         if (periodIdx === 0) return;
         const prevAbsentees = absentees[periodIdx - 1] || [];
         setAbsentees(prev => ({ ...prev, [periodIdx]: sortRollNumbers(prevAbsentees) }));
@@ -353,6 +366,23 @@ export default function AdminDashboard() {
         }));
         setHasModifications(true);
         notify({ message: `Copied ${prevAbsentees.length} absentee(s) from P${periods[periodIdx - 1]?.period || periodIdx}`, type: 'success' });
+    };
+
+    const unlockDateForEdit = () => {
+        const readableDate = selectedDate
+            ? new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            })
+            : 'this date';
+
+        const confirmed = window.confirm(`Unlock attendance for ${readableDate}?`);
+        if (!confirmed) return;
+
+        setIsDateLocked(false);
+        notify({ message: 'Editing unlocked. Save after making changes.', type: 'success' });
     };
 
     const addStudentToClass = async () => {
@@ -385,6 +415,7 @@ export default function AdminDashboard() {
 
     const submitAttendance = async () => {
         if (!classId) return;
+        if (isDateLocked) return;
         if (classRollNumbers.length === 0) {
             notify({ message: "No students found in this class. Add students first.", type: 'error' });
             return;
@@ -412,6 +443,7 @@ export default function AdminDashboard() {
             });
             notify({ message: "Attendance Saved Successfully ✓", type: 'success' });
             setHasModifications(false);
+            setIsDateLocked(true);
 
             // Refresh attendance dates list
             api.get(`/attendance/dates/${classId}`)
@@ -511,6 +543,23 @@ export default function AdminDashboard() {
                     )}
                 </div>
 
+                {isDateLocked && periods.length > 0 && (
+                    <div className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="flex items-start gap-2 text-amber-300 text-sm">
+                            <Lock className="w-4 h-4 mt-0.5" />
+                            <span>Saved attendance is locked to prevent accidental edits.</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={unlockDateForEdit}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-400/40 text-amber-200 hover:bg-amber-400/10 text-xs font-medium transition"
+                        >
+                            <LockOpen className="w-3.5 h-3.5" />
+                            Unlock to Edit
+                        </button>
+                    </div>
+                )}
+
                 {/* ─── Date Selector ─── */}
                 <div className="mb-6">
                     <button
@@ -560,6 +609,7 @@ export default function AdminDashboard() {
                                                 className="input w-auto min-w-[150px] !py-2"
                                                 value={slot.subjectId}
                                                 onChange={(e) => updatePeriod(slot.period, e.target.value)}
+                                                disabled={isDateLocked}
                                             >
                                                 <option value="">-- Select Subject --</option>
                                                 {subjects.map(sub => (
@@ -579,6 +629,7 @@ export default function AdminDashboard() {
                                                 onClick={() => requestRemovePeriod(slot.period)}
                                                 className="w-8 h-8 bg-red-500/10 text-red-400 rounded-lg text-xs hover:bg-red-500/20 flex items-center justify-center transition"
                                                 title="Remove period"
+                                                disabled={isDateLocked}
                                             >
                                                 <X className="w-3.5 h-3.5" />
                                             </button>
@@ -653,6 +704,7 @@ export default function AdminDashboard() {
                                         <button
                                             onClick={() => markAllPresent(index)}
                                             className="text-xs px-3 py-1.5 rounded-full border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 transition flex items-center gap-1.5"
+                                            disabled={isDateLocked}
                                         >
                                             <CheckCircle className="w-3 h-3" />
                                             All Present
@@ -661,6 +713,7 @@ export default function AdminDashboard() {
                                             <button
                                                 onClick={() => copyFromPrevious(index)}
                                                 className="text-xs px-3 py-1.5 rounded-full border border-white/10 text-[var(--text-dim)] hover:text-white hover:border-white/20 transition flex items-center gap-1.5"
+                                                disabled={isDateLocked}
                                             >
                                                 <RotateCcw className="w-3 h-3" />
                                                 Copy P{periods[index - 1]?.period}
@@ -677,11 +730,11 @@ export default function AdminDashboard() {
                                                 value={absentInputs[index] || ''}
                                                 onChange={(e) => handleBulkAbsentInput(index, e.target.value)}
                                                 className="input flex-1 text-sm !rounded-xl"
-                                                disabled={isScanning && scanningPeriodIndex === index}
+                                                disabled={isDateLocked || (isScanning && scanningPeriodIndex === index)}
                                             />
                                             <button
                                                 onClick={() => handleCameraButtonClick(index)}
-                                                disabled={isScanning && scanningPeriodIndex === index}
+                                                disabled={isDateLocked || (isScanning && scanningPeriodIndex === index)}
                                                 className="px-4 bg-white/5 border border-white/10 text-[var(--text-dim)] hover:bg-white/10 hover:text-white rounded-xl transition flex items-center justify-center disabled:opacity-50"
                                                 title="Scan Logbook"
                                             >
@@ -704,6 +757,7 @@ export default function AdminDashboard() {
                                                     key={roll}
                                                     onClick={() => toggleAbsent(index, roll)}
                                                     className={`grid-box ${isAbsent ? 'absent' : 'present'}`}
+                                                    disabled={isDateLocked}
                                                 >
                                                     {roll}
                                                 </button>
@@ -721,6 +775,7 @@ export default function AdminDashboard() {
                     <button
                         onClick={addPeriod}
                         className="btn btn-outline inline-flex w-auto px-8 items-center gap-2"
+                        disabled={isDateLocked}
                     >
                         <Plus className="w-4 h-4" />
                         Add Period
@@ -734,7 +789,7 @@ export default function AdminDashboard() {
                 </div>
 
                 {/* ─── Save Button — Fixed at bottom ─── */}
-                {periods.length > 0 && (
+                {periods.length > 0 && !isDateLocked && (
                     <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black via-black/95 to-transparent z-50">
                         <div className="max-w-4xl mx-auto">
                             <button
