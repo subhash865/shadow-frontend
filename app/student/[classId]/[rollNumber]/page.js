@@ -104,11 +104,29 @@ export default function StudentDashboard() {
 
   // Report Issue Modal State
   const [reportModal, setReportModal] = useState(false);
+  const [editingReportId, setEditingReportId] = useState(null);
   const [reportDate, setReportDate] = useState('');
   const [reportSubjectId, setReportSubjectId] = useState('');
   const [reportDescription, setReportDescription] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const myReports = reportsResponse?.reports || [];
+
+  const handleEditReportClick = (report) => {
+    setEditingReportId(report._id);
+    setReportDate(report.date || '');
+    const matchedSubject = data?.subjects?.find(s => s.subjectName === report.subjectName || s._id === report.subjectId);
+    setReportSubjectId(matchedSubject ? matchedSubject._id : '');
+    setReportDescription(report.issueDescription || '');
+    setReportModal(true);
+  };
+
+  const openNewReportModal = () => {
+    setEditingReportId(null);
+    setReportDate('');
+    setReportSubjectId('');
+    setReportDescription('');
+    setReportModal(true);
+  };
 
   // Load saved min percentage from localStorage
   useEffect(() => {
@@ -190,26 +208,49 @@ export default function StudentDashboard() {
     const selectedSub = data.subjects.find(s => s._id === reportSubjectId);
 
     try {
-      await api.post('/reports/submit', {
-        classId,
-        studentRoll: parseInt(rollNumber),
-        date: reportDate,
-        subjectId: reportSubjectId,
-        subjectName: selectedSub?.subjectName || 'Unknown',
-        issueDescription: reportDescription
-      });
+      if (editingReportId) {
+        await api.patch(`/reports/edit/${editingReportId}`, {
+          studentRoll: parseInt(rollNumber),
+          date: reportDate,
+          subjectId: reportSubjectId,
+          subjectName: selectedSub?.subjectName || 'Unknown',
+          issueDescription: reportDescription
+        });
+        notify({ message: "Report updated successfully!", type: 'success' });
+      } else {
+        await api.post('/reports/submit', {
+          classId,
+          studentRoll: parseInt(rollNumber),
+          date: reportDate,
+          subjectId: reportSubjectId,
+          subjectName: selectedSub?.subjectName || 'Unknown',
+          issueDescription: reportDescription
+        });
+        notify({ message: "Report submitted successfully!", type: 'success' });
+      }
 
-      notify({ message: "Report submitted successfully!", type: 'success' });
       setReportModal(false);
+      setEditingReportId(null);
       setReportDate('');
       setReportSubjectId('');
       setReportDescription('');
 
       mutate(reportsKey);
     } catch (err) {
-      notify({ message: "Failed to submit report", type: 'error' });
+      notify({ message: err.response?.data?.error || "Failed to process report", type: 'error' });
     } finally {
       setReportSubmitting(false);
+    }
+  };
+
+  const handleDeleteReport = async (reportId) => {
+    if (!confirm('Are you sure you want to delete this report?')) return;
+    try {
+      await api.delete(`/reports/delete/${reportId}?studentRoll=${rollNumber}`);
+      notify({ message: "Report deleted successfully", type: 'success' });
+      mutate(reportsKey);
+    } catch (err) {
+      notify({ message: err.response?.data?.error || "Failed to delete report", type: 'error' });
     }
   };
 
@@ -227,7 +268,12 @@ export default function StudentDashboard() {
     ? allAnnouncements.filter(a => a.subjectId === selectedSubjectId || a.subjectName === selectedSubject)
     : [];
 
-  if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading Report...</div>;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted || loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading Report...</div>;
   if (!data) return <div className="flex h-screen items-center justify-center text-[var(--text-dim)]">Student Not Found</div>;
 
   return (
@@ -237,7 +283,7 @@ export default function StudentDashboard() {
         onLogout={handleLogout}
         classId={classId}
         rollNumber={rollNumber}
-        onReportClick={() => setReportModal(true)}
+        onReportClick={openNewReportModal}
       />
 
       <div className="max-w-2xl mx-auto px-4 py-8">
@@ -615,6 +661,26 @@ export default function StudentDashboard() {
                       <p className="text-sm text-[var(--text-dim)]">{report.adminResponse}</p>
                     </div>
                   )}
+
+                  <div className="mt-3 flex justify-end gap-2">
+                    {report.status === 'pending' && (
+                      <button
+                        onClick={() => handleEditReportClick(report)}
+                        className="text-xs flex items-center gap-1 px-2 py-1 rounded text-[var(--text-dim)] hover:text-blue-400 hover:bg-blue-500/10 transition"
+                      >
+                        Edit Report
+                      </button>
+                    )}
+
+                    {report.status !== 'pending' && (
+                      <button
+                        onClick={() => handleDeleteReport(report._id)}
+                        className="text-xs flex items-center gap-1 px-2 py-1 rounded text-[var(--text-dim)] hover:text-red-400 hover:bg-red-500/10 transition"
+                      >
+                        Delete Report
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

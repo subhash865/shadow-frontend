@@ -1,10 +1,10 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Save, Plus, X, Calendar as CalendarIcon,
     RotateCcw, FileText, Clock, Users, CheckCircle,
-    AlertTriangle, Loader2
+    AlertTriangle, Loader2, Camera
 } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
 import Calendar from '@/app/components/Calendar';
@@ -31,6 +31,9 @@ export default function AdminDashboard() {
     const [saving, setSaving] = useState(false);
     const [pendingReports, setPendingReports] = useState(0);
     const [confirmRemovePeriod, setConfirmRemovePeriod] = useState(null);
+    const [isScanning, setIsScanning] = useState(false);
+    const [scanningPeriodIndex, setScanningPeriodIndex] = useState(null);
+    const fileInputRef = useRef(null);
 
     // Check if viewing past date
     const checkIfPastDate = (date) => {
@@ -145,6 +148,48 @@ export default function AdminDashboard() {
         localStorage.removeItem('adminClassId');
         localStorage.removeItem('token');
         router.push('/');
+    };
+
+    const handleCameraButtonClick = (periodIdx) => {
+        setScanningPeriodIndex(periodIdx);
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
+    };
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file || scanningPeriodIndex === null) return;
+
+        e.target.value = ''; // Reset input
+        setIsScanning(true);
+        try {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onloadend = async () => {
+                const base64data = reader.result;
+                try {
+                    const res = await api.post('/ai/scan-logbook', { imageBase64: base64data });
+                    const rollNumbersStr = res.data.rollNumbers || '';
+                    if (!rollNumbersStr) {
+                        notify({ message: "No numbers found in the image", type: 'error' });
+                    } else {
+                        handleBulkAbsentInput(scanningPeriodIndex, rollNumbersStr);
+                        notify({ message: "Logbook scanned successfully!", type: 'success' });
+                    }
+                } catch (apiErr) {
+                    const errorMsg = apiErr.response?.data?.details || apiErr.response?.data?.error || apiErr.message || "Please check server.";
+                    notify({ message: `AI Scan failed: ${errorMsg}`, type: 'error' });
+                } finally {
+                    setIsScanning(false);
+                    setScanningPeriodIndex(null);
+                }
+            };
+        } catch (err) {
+            notify({ message: "Failed to read image", type: 'error' });
+            setIsScanning(false);
+            setScanningPeriodIndex(null);
+        }
     };
 
     const addPeriod = () => {
@@ -329,6 +374,14 @@ export default function AdminDashboard() {
     return (
         <>
             <Navbar isAdmin={true} onLogout={handleLogout} classId={classId} />
+            <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                ref={fileInputRef}
+                onChange={handleImageUpload}
+                className="hidden"
+            />
 
             <div className="max-w-4xl mx-auto px-4 py-6 pb-24">
 
@@ -524,14 +577,29 @@ export default function AdminDashboard() {
                                     </div>
 
                                     {/* Bulk input */}
-                                    <div className="mb-3">
-                                        <input
-                                            type="text"
-                                            placeholder="Type absent roll numbers (e.g. 1, 5, 12, 23)"
-                                            value={absentInputs[index] || ''}
-                                            onChange={(e) => handleBulkAbsentInput(index, e.target.value)}
-                                            className="input w-full text-sm !rounded-xl"
-                                        />
+                                    <div className="mb-3 relative">
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Type absent roll numbers (e.g. 1, 5, 12, 23)"
+                                                value={absentInputs[index] || ''}
+                                                onChange={(e) => handleBulkAbsentInput(index, e.target.value)}
+                                                className="input flex-1 text-sm !rounded-xl"
+                                                disabled={isScanning && scanningPeriodIndex === index}
+                                            />
+                                            <button
+                                                onClick={() => handleCameraButtonClick(index)}
+                                                disabled={isScanning && scanningPeriodIndex === index}
+                                                className="px-4 bg-white/5 border border-white/10 text-[var(--text-dim)] hover:bg-white/10 hover:text-white rounded-xl transition flex items-center justify-center disabled:opacity-50"
+                                                title="Scan Logbook"
+                                            >
+                                                {isScanning && scanningPeriodIndex === index ? (
+                                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                                ) : (
+                                                    <Camera className="w-5 h-5" />
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* Grid */}

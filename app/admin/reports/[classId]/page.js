@@ -65,11 +65,17 @@ export default function AdminReports() {
         }
     };
 
+    const handleLogout = () => {
+        localStorage.removeItem('adminClassId');
+        localStorage.removeItem('token');
+        router.push('/');
+    };
+
     if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading Reports...</div>;
 
     return (
         <>
-            <Navbar isAdmin={true} onLogout={() => router.push('/')} />
+            <Navbar isAdmin={true} onLogout={handleLogout} />
 
             <div className="max-w-4xl mx-auto px-4 py-8">
                 <div className="flex items-center gap-4 mb-8">

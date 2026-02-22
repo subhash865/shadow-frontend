@@ -132,7 +132,12 @@ export default function BunkEffect() {
 
     const totalBunks = Object.values(bunkCounts).reduce((sum, c) => sum + c, 0);
 
-    if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!mounted || loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
 
     return (
         <>

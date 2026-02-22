@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
 import Calendar from '@/app/components/Calendar';
@@ -101,7 +101,12 @@ export default function StudentCalendar() {
         });
     };
 
-    if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!mounted || loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
 
     return (
         <>
