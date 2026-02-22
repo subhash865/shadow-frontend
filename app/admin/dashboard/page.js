@@ -1,15 +1,52 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Save, Plus, X, Calendar as CalendarIcon,
-    RotateCcw, FileText, Clock, Users, CheckCircle,
-    AlertTriangle, Loader2
+    RotateCcw, FileText, Clock, CheckCircle,
+    AlertTriangle, Loader2, Camera, Lock, LockOpen
 } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
 import Calendar from '@/app/components/Calendar';
 import api from '@/utils/api';
 import { useNotification } from '@/app/components/Notification';
+
+const sanitizeRollNumber = (value) => {
+    if (value === undefined || value === null) return null;
+    const cleaned = String(value).trim();
+    return cleaned || null;
+};
+
+const sortRollNumbers = (rolls) => {
+    return [...rolls].sort((a, b) =>
+        String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' })
+    );
+};
+
+const normalizeClassRollNumbers = (classData) => {
+    const rawRolls = Array.isArray(classData?.rollNumbers) ? classData.rollNumbers : [];
+    const seen = new Set();
+    const normalizedRolls = rawRolls
+        .map((roll) => sanitizeRollNumber(roll))
+        .filter((roll) => {
+            if (!roll || seen.has(roll)) return false;
+            seen.add(roll);
+            return true;
+        });
+
+    if (normalizedRolls.length > 0) {
+        return sortRollNumbers(normalizedRolls);
+    }
+
+    const totalStudents = Number(classData?.totalStudents);
+    if (Number.isInteger(totalStudents) && totalStudents > 0) {
+        return Array.from({ length: totalStudents }, (_, index) => String(index + 1));
+    }
+
+    return [];
+};
+
+const AUTO_RELOCK_MS = 2 * 60 * 1000;
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -27,10 +64,20 @@ export default function AdminDashboard() {
     const [hasModifications, setHasModifications] = useState(false);
     const [isViewingPastDate, setIsViewingPastDate] = useState(false);
     const [lastModified, setLastModified] = useState(null);
-    const [classStrength, setClassStrength] = useState(70);
+    const [classRollNumbers, setClassRollNumbers] = useState([]);
     const [saving, setSaving] = useState(false);
     const [pendingReports, setPendingReports] = useState(0);
     const [confirmRemovePeriod, setConfirmRemovePeriod] = useState(null);
+    const [isScanning, setIsScanning] = useState(false);
+    const [scanningPeriodIndex, setScanningPeriodIndex] = useState(null);
+    const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+    const [newStudentRoll, setNewStudentRoll] = useState('');
+    const [addingStudent, setAddingStudent] = useState(false);
+    const [isDateLocked, setIsDateLocked] = useState(false);
+    const [autoRelockArmed, setAutoRelockArmed] = useState(false);
+    const fileInputRef = useRef(null);
+    const autoRelockTimerRef = useRef(null);
+    const allowedRollSet = new Set(classRollNumbers);
 
     // Check if viewing past date
     const checkIfPastDate = (date) => {
@@ -59,14 +106,21 @@ export default function AdminDashboard() {
                 const newAbsentees = {};
                 const newAbsentInputs = {};
                 res.data.periods.forEach((period, index) => {
-                    newAbsentees[index] = period.absentRollNumbers || [];
-                    newAbsentInputs[index] = (period.absentRollNumbers || []).sort((a, b) => a - b).join(', ');
+                    const normalizedRolls = sortRollNumbers(
+                        (period.absentRollNumbers || [])
+                            .map((roll) => sanitizeRollNumber(roll))
+                            .filter(Boolean)
+                    );
+                    newAbsentees[index] = normalizedRolls;
+                    newAbsentInputs[index] = normalizedRolls.join(', ');
                 });
 
                 setPeriods(formattedPeriods);
                 setAbsentees(newAbsentees);
                 setAbsentInputs(newAbsentInputs);
                 setHasModifications(false);
+                setIsDateLocked(true);
+                setAutoRelockArmed(false);
 
                 if (res.data.updatedAt) {
                     setLastModified(new Date(res.data.updatedAt));
@@ -78,6 +132,8 @@ export default function AdminDashboard() {
                 setAbsentInputs({});
                 setHasModifications(false);
                 setLastModified(null);
+                setIsDateLocked(false);
+                setAutoRelockArmed(false);
             }
         } catch (err) {
             // Error fetching attendance — reset to empty
@@ -86,6 +142,8 @@ export default function AdminDashboard() {
             setAbsentInputs({});
             setHasModifications(false);
             setLastModified(null);
+            setIsDateLocked(false);
+            setAutoRelockArmed(false);
         }
     }, []);
 
@@ -108,10 +166,11 @@ export default function AdminDashboard() {
             api.get(`/reports/class/${storedClassId}`).catch(() => ({ data: { reports: [] } })),
         ]).then(([classRes, datesRes, reportsRes]) => {
             const subjectsList = classRes.data.subjects;
+            const normalizedClassRollNumbers = normalizeClassRollNumbers(classRes.data);
 
             setSubjects(subjectsList);
             setClassName(classRes.data.className);
-            setClassStrength(classRes.data.totalStudents || 70);
+            setClassRollNumbers(normalizedClassRollNumbers);
 
             // Format attendance dates
             const formattedDates = (datesRes.data.dates || []).map(dateStr => {
@@ -141,13 +200,95 @@ export default function AdminDashboard() {
         }
     }, [selectedDate, classId, subjects, loadAttendanceForDate]);
 
+    const clearAutoRelockTimer = useCallback(() => {
+        if (autoRelockTimerRef.current) {
+            clearTimeout(autoRelockTimerRef.current);
+            autoRelockTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        if (isDateLocked || !autoRelockArmed) {
+            clearAutoRelockTimer();
+            return;
+        }
+
+        const resetAutoRelockTimer = () => {
+            clearAutoRelockTimer();
+            autoRelockTimerRef.current = window.setTimeout(() => {
+                setIsDateLocked(true);
+                setAutoRelockArmed(false);
+                notify({ message: 'Editing auto-locked after 2 minutes of inactivity.', type: 'success' });
+            }, AUTO_RELOCK_MS);
+        };
+
+        const activityEvents = ['pointerdown', 'keydown', 'input', 'touchstart'];
+        activityEvents.forEach((eventName) => {
+            window.addEventListener(eventName, resetAutoRelockTimer, true);
+        });
+
+        resetAutoRelockTimer();
+
+        return () => {
+            activityEvents.forEach((eventName) => {
+                window.removeEventListener(eventName, resetAutoRelockTimer, true);
+            });
+            clearAutoRelockTimer();
+        };
+    }, [isDateLocked, autoRelockArmed, notify, clearAutoRelockTimer]);
+
     const handleLogout = () => {
         localStorage.removeItem('adminClassId');
         localStorage.removeItem('token');
         router.push('/');
     };
 
+    const handleCameraButtonClick = (periodIdx) => {
+        if (isDateLocked) return;
+        setScanningPeriodIndex(periodIdx);
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
+    };
+
+    const handleImageUpload = async (e) => {
+        if (isDateLocked) return;
+        const file = e.target.files?.[0];
+        if (!file || scanningPeriodIndex === null) return;
+
+        e.target.value = ''; // Reset input
+        setIsScanning(true);
+        try {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onloadend = async () => {
+                const base64data = reader.result;
+                try {
+                    const res = await api.post('/ai/scan-logbook', { imageBase64: base64data });
+                    const rollNumbersStr = res.data.rollNumbers || '';
+                    if (!rollNumbersStr) {
+                        notify({ message: "No numbers found in the image", type: 'error' });
+                    } else {
+                        handleBulkAbsentInput(scanningPeriodIndex, rollNumbersStr);
+                        notify({ message: "Logbook scanned successfully!", type: 'success' });
+                    }
+                } catch (apiErr) {
+                    const errorMsg = apiErr.response?.data?.details || apiErr.response?.data?.error || apiErr.message || "Please check server.";
+                    notify({ message: `AI Scan failed: ${errorMsg}`, type: 'error' });
+                } finally {
+                    setIsScanning(false);
+                    setScanningPeriodIndex(null);
+                }
+            };
+        } catch (err) {
+            notify({ message: "Failed to read image", type: 'error' });
+            setIsScanning(false);
+            setScanningPeriodIndex(null);
+        }
+    };
+
     const addPeriod = () => {
+        if (isDateLocked) return;
         const nextPeriodNum = periods.length > 0
             ? Math.max(...periods.map(p => p.period)) + 1
             : 1;
@@ -156,6 +297,7 @@ export default function AdminDashboard() {
     };
 
     const requestRemovePeriod = (periodNum) => {
+        if (isDateLocked) return;
         setConfirmRemovePeriod(periodNum);
     };
 
@@ -190,6 +332,7 @@ export default function AdminDashboard() {
     };
 
     const updatePeriod = (periodNum, subjectId) => {
+        if (isDateLocked) return;
         const subject = subjects.find(s => s._id === subjectId);
         setPeriods(prev => prev.map(slot =>
             slot.period === periodNum
@@ -200,6 +343,7 @@ export default function AdminDashboard() {
     };
 
     const toggleAbsent = (periodIdx, rollNo) => {
+        if (isDateLocked) return;
         setAbsentees(prev => {
             const currentList = prev[periodIdx] || [];
             let newList;
@@ -211,15 +355,16 @@ export default function AdminDashboard() {
 
             setAbsentInputs(prevInputs => ({
                 ...prevInputs,
-                [periodIdx]: newList.sort((a, b) => a - b).join(', ')
+                [periodIdx]: sortRollNumbers(newList).join(', ')
             }));
 
-            return { ...prev, [periodIdx]: newList };
+            return { ...prev, [periodIdx]: sortRollNumbers(newList) };
         });
         setHasModifications(true);
     };
 
     const handleBulkAbsentInput = (periodIdx, inputValue) => {
+        if (isDateLocked) return;
         setAbsentInputs(prev => ({ ...prev, [periodIdx]: inputValue }));
 
         if (!inputValue.trim()) {
@@ -228,18 +373,26 @@ export default function AdminDashboard() {
             return;
         }
 
-        const rollNumbers = inputValue
-            .split(',')
-            .map(str => parseInt(str.trim()))
-            .filter(num => !isNaN(num) && num >= 1 && num <= classStrength);
+        const uniqueRolls = [];
+        const seen = new Set();
+        inputValue
+            .split(/[,\n]/)
+            .map(str => sanitizeRollNumber(str))
+            .filter(Boolean)
+            .forEach((roll) => {
+                if (allowedRollSet.has(roll) && !seen.has(roll)) {
+                    seen.add(roll);
+                    uniqueRolls.push(roll);
+                }
+            });
 
-        const uniqueRolls = [...new Set(rollNumbers)];
-        setAbsentees(prev => ({ ...prev, [periodIdx]: uniqueRolls }));
+        setAbsentees(prev => ({ ...prev, [periodIdx]: sortRollNumbers(uniqueRolls) }));
         setHasModifications(true);
     };
 
     // Mark all present for a period (clear absentees)
     const markAllPresent = (periodIdx) => {
+        if (isDateLocked) return;
         setAbsentees(prev => ({ ...prev, [periodIdx]: [] }));
         setAbsentInputs(prev => ({ ...prev, [periodIdx]: '' }));
         setHasModifications(true);
@@ -247,19 +400,71 @@ export default function AdminDashboard() {
 
     // Copy absentees from previous period
     const copyFromPrevious = (periodIdx) => {
+        if (isDateLocked) return;
         if (periodIdx === 0) return;
         const prevAbsentees = absentees[periodIdx - 1] || [];
-        setAbsentees(prev => ({ ...prev, [periodIdx]: [...prevAbsentees] }));
+        setAbsentees(prev => ({ ...prev, [periodIdx]: sortRollNumbers(prevAbsentees) }));
         setAbsentInputs(prev => ({
             ...prev,
-            [periodIdx]: prevAbsentees.sort((a, b) => a - b).join(', ')
+            [periodIdx]: sortRollNumbers(prevAbsentees).join(', ')
         }));
         setHasModifications(true);
         notify({ message: `Copied ${prevAbsentees.length} absentee(s) from P${periods[periodIdx - 1]?.period || periodIdx}`, type: 'success' });
     };
 
+    const unlockDateForEdit = () => {
+        const readableDate = selectedDate
+            ? new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            })
+            : 'this date';
+
+        const confirmed = window.confirm(`Unlock attendance for ${readableDate}?`);
+        if (!confirmed) return;
+
+        setIsDateLocked(false);
+        setAutoRelockArmed(true);
+        notify({ message: 'Editing unlocked. Save after making changes.', type: 'success' });
+    };
+
+    const addStudentToClass = async () => {
+        if (!classId || addingStudent) return;
+        const rollNumber = sanitizeRollNumber(newStudentRoll);
+
+        if (!rollNumber) {
+            notify({ message: 'Enter a valid roll number.', type: 'error' });
+            return;
+        }
+
+        setAddingStudent(true);
+        try {
+            const res = await api.patch(`/classes/${classId}/students`, { rollNumber });
+            const updatedRolls = normalizeClassRollNumbers({ rollNumbers: res.data.rollNumbers });
+            setClassRollNumbers(updatedRolls);
+            setNewStudentRoll('');
+            setShowAddStudentModal(false);
+            notify({ message: `Student ${rollNumber} added successfully.`, type: 'success' });
+        } catch (err) {
+            if (err.response?.status === 409) {
+                notify({ message: err.response?.data?.error || 'Roll number already exists in this class.', type: 'error' });
+            } else {
+                notify({ message: err.response?.data?.error || 'Failed to add student.', type: 'error' });
+            }
+        } finally {
+            setAddingStudent(false);
+        }
+    };
+
     const submitAttendance = async () => {
         if (!classId) return;
+        if (isDateLocked) return;
+        if (classRollNumbers.length === 0) {
+            notify({ message: "No students found in this class. Add students first.", type: 'error' });
+            return;
+        }
 
         const validPeriods = periods.filter(slot => slot.subjectId);
         if (validPeriods.length === 0) {
@@ -272,7 +477,7 @@ export default function AdminDashboard() {
             periodNum: slot.period,
             subjectId: slot.subjectId,
             subjectName: slot.subjectName,
-            absentRollNumbers: absentees[index] || []
+            absentRollNumbers: sortRollNumbers(absentees[index] || [])
         }));
 
         try {
@@ -283,6 +488,8 @@ export default function AdminDashboard() {
             });
             notify({ message: "Attendance Saved Successfully ✓", type: 'success' });
             setHasModifications(false);
+            setIsDateLocked(true);
+            setAutoRelockArmed(false);
 
             // Refresh attendance dates list
             api.get(`/attendance/dates/${classId}`)
@@ -329,6 +536,14 @@ export default function AdminDashboard() {
     return (
         <>
             <Navbar isAdmin={true} onLogout={handleLogout} classId={classId} />
+            <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                ref={fileInputRef}
+                onChange={handleImageUpload}
+                className="hidden"
+            />
 
             <div className="max-w-4xl mx-auto px-4 py-6 pb-24">
 
@@ -340,17 +555,26 @@ export default function AdminDashboard() {
                                 Mark Attendance
                             </h1>
                             <p className="text-[var(--text-dim)] text-sm">{className}</p>
+                            <p className="text-[var(--text-dim)] text-xs mt-1">{classRollNumbers.length} students</p>
                         </div>
-                        {/* Pending reports badge */}
-                        {pendingReports > 0 && (
+                        <div className="flex flex-col items-end gap-2">
                             <button
-                                onClick={() => router.push(`/admin/reports/${classId}`)}
-                                className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium hover:bg-amber-500/15 transition"
+                                onClick={() => setShowAddStudentModal(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium hover:bg-emerald-500/15 transition"
                             >
-                                <FileText className="w-3.5 h-3.5" />
-                                {pendingReports} pending report{pendingReports > 1 ? 's' : ''}
+                                <Plus className="w-3.5 h-3.5" />
+                                Add Student
                             </button>
-                        )}
+                            {pendingReports > 0 && (
+                                <button
+                                    onClick={() => router.push(`/admin/reports/${classId}`)}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium hover:bg-amber-500/15 transition"
+                                >
+                                    <FileText className="w-3.5 h-3.5" />
+                                    {pendingReports} pending report{pendingReports > 1 ? 's' : ''}
+                                </button>
+                            )}
+                        </div>
                     </div>
 
 
@@ -364,6 +588,32 @@ export default function AdminDashboard() {
                         </div>
                     )}
                 </div>
+
+                {isDateLocked && periods.length > 0 && (
+                    <div className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="flex items-start gap-2 text-amber-300 text-sm">
+                            <Lock className="w-4 h-4 mt-0.5" />
+                            <span>Saved attendance is locked to prevent accidental edits.</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={unlockDateForEdit}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-400/40 text-amber-200 hover:bg-amber-400/10 text-xs font-medium transition"
+                        >
+                            <LockOpen className="w-3.5 h-3.5" />
+                            Unlock to Edit
+                        </button>
+                    </div>
+                )}
+
+                {!isDateLocked && autoRelockArmed && periods.length > 0 && (
+                    <div className="mb-5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3">
+                        <div className="flex items-start gap-2 text-blue-200 text-sm">
+                            <LockOpen className="w-4 h-4 mt-0.5" />
+                            <span>Editing is unlocked. It will auto-lock after 2 minutes of inactivity.</span>
+                        </div>
+                    </div>
+                )}
 
                 {/* ─── Date Selector ─── */}
                 <div className="mb-6">
@@ -401,7 +651,6 @@ export default function AdminDashboard() {
                     <div className="space-y-4">
                         {periods.map((slot, index) => {
                             const absentCount = (absentees[index] || []).length;
-                            const presentCount = classStrength - absentCount;
 
                             return (
                                 <div key={index} className="card animate-fade-in" style={{ position: 'relative', overflow: 'hidden' }}>
@@ -415,6 +664,7 @@ export default function AdminDashboard() {
                                                 className="input w-auto min-w-[150px] !py-2"
                                                 value={slot.subjectId}
                                                 onChange={(e) => updatePeriod(slot.period, e.target.value)}
+                                                disabled={isDateLocked}
                                             >
                                                 <option value="">-- Select Subject --</option>
                                                 {subjects.map(sub => (
@@ -434,6 +684,7 @@ export default function AdminDashboard() {
                                                 onClick={() => requestRemovePeriod(slot.period)}
                                                 className="w-8 h-8 bg-red-500/10 text-red-400 rounded-lg text-xs hover:bg-red-500/20 flex items-center justify-center transition"
                                                 title="Remove period"
+                                                disabled={isDateLocked}
                                             >
                                                 <X className="w-3.5 h-3.5" />
                                             </button>
@@ -508,6 +759,7 @@ export default function AdminDashboard() {
                                         <button
                                             onClick={() => markAllPresent(index)}
                                             className="text-xs px-3 py-1.5 rounded-full border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 transition flex items-center gap-1.5"
+                                            disabled={isDateLocked}
                                         >
                                             <CheckCircle className="w-3 h-3" />
                                             All Present
@@ -516,6 +768,7 @@ export default function AdminDashboard() {
                                             <button
                                                 onClick={() => copyFromPrevious(index)}
                                                 className="text-xs px-3 py-1.5 rounded-full border border-white/10 text-[var(--text-dim)] hover:text-white hover:border-white/20 transition flex items-center gap-1.5"
+                                                disabled={isDateLocked}
                                             >
                                                 <RotateCcw className="w-3 h-3" />
                                                 Copy P{periods[index - 1]?.period}
@@ -524,20 +777,34 @@ export default function AdminDashboard() {
                                     </div>
 
                                     {/* Bulk input */}
-                                    <div className="mb-3">
-                                        <input
-                                            type="text"
-                                            placeholder="Type absent roll numbers (e.g. 1, 5, 12, 23)"
-                                            value={absentInputs[index] || ''}
-                                            onChange={(e) => handleBulkAbsentInput(index, e.target.value)}
-                                            className="input w-full text-sm !rounded-xl"
-                                        />
+                                    <div className="mb-3 relative">
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Type absent roll numbers (e.g. 1, 5, 12, 23)"
+                                                value={absentInputs[index] || ''}
+                                                onChange={(e) => handleBulkAbsentInput(index, e.target.value)}
+                                                className="input flex-1 text-sm !rounded-xl"
+                                                disabled={isDateLocked || (isScanning && scanningPeriodIndex === index)}
+                                            />
+                                            <button
+                                                onClick={() => handleCameraButtonClick(index)}
+                                                disabled={isDateLocked || (isScanning && scanningPeriodIndex === index)}
+                                                className="px-4 bg-white/5 border border-white/10 text-[var(--text-dim)] hover:bg-white/10 hover:text-white rounded-xl transition flex items-center justify-center disabled:opacity-50"
+                                                title="Scan Logbook"
+                                            >
+                                                {isScanning && scanningPeriodIndex === index ? (
+                                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                                ) : (
+                                                    <Camera className="w-5 h-5" />
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* Grid */}
                                     <div className="grid grid-cols-7 sm:grid-cols-10 gap-1.5">
-                                        {[...Array(classStrength)].map((_, i) => {
-                                            const roll = i + 1;
+                                        {classRollNumbers.map((roll) => {
                                             const isAbsent = (absentees[index] || []).includes(roll);
 
                                             return (
@@ -545,6 +812,7 @@ export default function AdminDashboard() {
                                                     key={roll}
                                                     onClick={() => toggleAbsent(index, roll)}
                                                     className={`grid-box ${isAbsent ? 'absent' : 'present'}`}
+                                                    disabled={isDateLocked}
                                                 >
                                                     {roll}
                                                 </button>
@@ -562,6 +830,7 @@ export default function AdminDashboard() {
                     <button
                         onClick={addPeriod}
                         className="btn btn-outline inline-flex w-auto px-8 items-center gap-2"
+                        disabled={isDateLocked}
                     >
                         <Plus className="w-4 h-4" />
                         Add Period
@@ -575,7 +844,7 @@ export default function AdminDashboard() {
                 </div>
 
                 {/* ─── Save Button — Fixed at bottom ─── */}
-                {periods.length > 0 && (
+                {periods.length > 0 && !isDateLocked && (
                     <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black via-black/95 to-transparent z-50">
                         <div className="max-w-4xl mx-auto">
                             <button
@@ -595,6 +864,53 @@ export default function AdminDashboard() {
                                     </>
                                 )}
                             </button>
+                        </div>
+                    </div>
+                )}
+
+                {showAddStudentModal && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                        <div className="w-full max-w-sm glass-card !mb-0">
+                            <h2 className="text-lg font-semibold mb-2">Add Student</h2>
+                            <p className="text-sm text-[var(--text-dim)] mb-4">
+                                Add one roll number to this class. Duplicate values are blocked.
+                            </p>
+                            <input
+                                type="text"
+                                className="input mb-4"
+                                placeholder="Enter roll number"
+                                value={newStudentRoll}
+                                onChange={(e) => setNewStudentRoll(e.target.value)}
+                                disabled={addingStudent}
+                            />
+                            <div className="flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowAddStudentModal(false);
+                                        setNewStudentRoll('');
+                                    }}
+                                    className="px-4 py-2 rounded-lg border border-white/10 text-[var(--text-dim)] hover:text-white hover:border-white/20 transition"
+                                    disabled={addingStudent}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={addStudentToClass}
+                                    className="btn btn-primary !w-auto px-4 py-2"
+                                    disabled={addingStudent}
+                                >
+                                    {addingStudent ? (
+                                        <span className="flex items-center gap-2">
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Adding...
+                                        </span>
+                                    ) : (
+                                        'Add Student'
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
 import { useNotification } from '@/app/components/Notification';
+import useSWR, { mutate } from 'swr';
 
 export default function StudentDashboard() {
   const params = useParams();
@@ -12,11 +13,86 @@ export default function StudentDashboard() {
   const router = useRouter();
   const notify = useNotification();
 
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [minPercentage, setMinPercentage] = useState(75);
-  const [announcementCount, setAnnouncementCount] = useState(0);
-  const [allAnnouncements, setAllAnnouncements] = useState([]);
+
+  const fetcher = url => api.get(url).then(res => res.data);
+  const reportKey = classId && rollNumber ? `/student/report/${classId}/${rollNumber}` : null;
+  const reportsKey = classId && rollNumber ? `/reports/${classId}/${rollNumber}` : null;
+  const announcementsKey = classId ? `/announcements/${classId}` : null;
+  const reportCacheKey = classId && rollNumber ? `cls_config_${classId}_${rollNumber}` : null;
+  const subjectCacheKey = classId ? `cls_subjects_${classId}` : null;
+
+  const getCachedReport = () => {
+    if (typeof window === 'undefined' || !reportCacheKey) return null;
+    try {
+      return JSON.parse(localStorage.getItem(reportCacheKey) || 'null');
+    } catch {
+      return null;
+    }
+  };
+
+  const swrConfig = {
+    revalidateOnFocus: false,
+    dedupingInterval: 30000,
+    shouldRetryOnError: true,
+    errorRetryCount: 3,
+    errorRetryInterval: 5000
+  };
+
+  const { data, error, isLoading: reportLoading } = useSWR(
+    reportKey,
+    fetcher,
+    {
+      ...swrConfig,
+      onSuccess: (resData) => {
+        if (typeof window !== 'undefined') {
+          if (reportCacheKey) {
+            localStorage.setItem(reportCacheKey, JSON.stringify(resData));
+          }
+          if (subjectCacheKey && Array.isArray(resData?.subjects)) {
+            localStorage.setItem(subjectCacheKey, JSON.stringify(resData.subjects));
+          }
+        }
+      },
+      fallbackData: getCachedReport()
+    }
+  );
+
+  const { data: reportsResponse } = useSWR(
+    reportsKey,
+    fetcher,
+    swrConfig
+  );
+
+  const { data: announcementsResponse } = useSWR(
+    announcementsKey,
+    fetcher,
+    swrConfig
+  );
+
+  const allAnnouncements = announcementsResponse?.announcements || [];
+
+  const now = new Date();
+  const announcementCount = allAnnouncements.filter(a => {
+    if (!a.dueDate) return false;
+    const due = new Date(a.dueDate);
+    const diff = due - now;
+    return diff > 0 && diff < 86400000;
+  }).length;
+
+  const loading = reportLoading && !data;
+
+  useEffect(() => {
+    if (error) {
+      const status = error?.response?.status;
+      notify({
+        message: status === 503
+          ? "Server is busy, retrying..."
+          : "Student not found or Server Error",
+        type: 'error'
+      });
+    }
+  }, [error]);
 
   // History/Works Modal
   const [historyModal, setHistoryModal] = useState(false);
@@ -28,11 +104,29 @@ export default function StudentDashboard() {
 
   // Report Issue Modal State
   const [reportModal, setReportModal] = useState(false);
+  const [editingReportId, setEditingReportId] = useState(null);
   const [reportDate, setReportDate] = useState('');
   const [reportSubjectId, setReportSubjectId] = useState('');
   const [reportDescription, setReportDescription] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
-  const [myReports, setMyReports] = useState([]);
+  const myReports = reportsResponse?.reports || [];
+
+  const handleEditReportClick = (report) => {
+    setEditingReportId(report._id);
+    setReportDate(report.date || '');
+    const matchedSubject = data?.subjects?.find(s => s.subjectName === report.subjectName || s._id === report.subjectId);
+    setReportSubjectId(matchedSubject ? matchedSubject._id : '');
+    setReportDescription(report.issueDescription || '');
+    setReportModal(true);
+  };
+
+  const openNewReportModal = () => {
+    setEditingReportId(null);
+    setReportDate('');
+    setReportSubjectId('');
+    setReportDescription('');
+    setReportModal(true);
+  };
 
   // Load saved min percentage from localStorage
   useEffect(() => {
@@ -74,55 +168,13 @@ export default function StudentDashboard() {
     return { text: `${diffDays} days left`, type: 'safe', days: diffDays };
   };
 
-  const fetchData = async () => {
-    if (!classId || !rollNumber) return;
-
-    try {
-      const [reportRes, reportsRes, announcementsRes] = await Promise.allSettled([
-        api.get(`/student/report/${classId}/${rollNumber}`),
-        api.get(`/reports/${classId}/${rollNumber}`),
-        api.get(`/announcements/${classId}`)
-      ]);
-
-      if (reportRes.status === 'fulfilled') {
-        setData(reportRes.value.data);
-      } else {
-        notify({ message: "Student not found or Server Error", type: 'error' });
-      }
-
-      if (reportsRes.status === 'fulfilled') {
-        setMyReports(reportsRes.value.data.reports || []);
-      }
-
-      if (announcementsRes.status === 'fulfilled') {
-        const announcements = announcementsRes.value.data.announcements || [];
-        setAllAnnouncements(announcements);
-
-        // Count urgent announcements (due in next 24h)
-        const now = new Date();
-        const urgentCount = announcements.filter(a => {
-          if (!a.dueDate) return false;
-          const due = new Date(a.dueDate);
-          const diff = due - now;
-          return diff > 0 && diff < 86400000;
-        }).length;
-        setAnnouncementCount(urgentCount);
-      }
-    } catch (err) {
-      console.error("Fetch Error:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, [classId, rollNumber]);
+  // Fetching is now handled by SWR and localStorage caching above
 
   const handleLogout = () => {
     localStorage.removeItem('studentClassId');
     localStorage.removeItem('studentRoll');
     localStorage.removeItem('studentClassName');
+    localStorage.removeItem('studentToken');
     router.push('/');
   };
 
@@ -157,27 +209,49 @@ export default function StudentDashboard() {
     const selectedSub = data.subjects.find(s => s._id === reportSubjectId);
 
     try {
-      await api.post('/reports/submit', {
-        classId,
-        studentRoll: parseInt(rollNumber),
-        date: reportDate,
-        subjectId: reportSubjectId,
-        subjectName: selectedSub?.subjectName || 'Unknown',
-        issueDescription: reportDescription
-      });
+      if (editingReportId) {
+        await api.patch(`/reports/edit/${editingReportId}`, {
+          studentRoll: String(rollNumber),
+          date: reportDate,
+          subjectId: reportSubjectId,
+          subjectName: selectedSub?.subjectName || 'Unknown',
+          issueDescription: reportDescription
+        });
+        notify({ message: "Report updated successfully!", type: 'success' });
+      } else {
+        await api.post('/reports/submit', {
+          classId,
+          studentRoll: String(rollNumber),
+          date: reportDate,
+          subjectId: reportSubjectId,
+          subjectName: selectedSub?.subjectName || 'Unknown',
+          issueDescription: reportDescription
+        });
+        notify({ message: "Report submitted successfully!", type: 'success' });
+      }
 
-      notify({ message: "Report submitted successfully!", type: 'success' });
       setReportModal(false);
+      setEditingReportId(null);
       setReportDate('');
       setReportSubjectId('');
       setReportDescription('');
 
-      const res = await api.get(`/reports/${classId}/${rollNumber}`);
-      setMyReports(res.data.reports || []);
+      mutate(reportsKey);
     } catch (err) {
-      notify({ message: "Failed to submit report", type: 'error' });
+      notify({ message: err.response?.data?.error || "Failed to process report", type: 'error' });
     } finally {
       setReportSubmitting(false);
+    }
+  };
+
+  const handleDeleteReport = async (reportId) => {
+    if (!confirm('Are you sure you want to delete this report?')) return;
+    try {
+      await api.delete(`/reports/delete/${reportId}`);
+      notify({ message: "Report deleted successfully", type: 'success' });
+      mutate(reportsKey);
+    } catch (err) {
+      notify({ message: err.response?.data?.error || "Failed to delete report", type: 'error' });
     }
   };
 
@@ -195,7 +269,12 @@ export default function StudentDashboard() {
     ? allAnnouncements.filter(a => a.subjectId === selectedSubjectId || a.subjectName === selectedSubject)
     : [];
 
-  if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading Report...</div>;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted || loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading Report...</div>;
   if (!data) return <div className="flex h-screen items-center justify-center text-[var(--text-dim)]">Student Not Found</div>;
 
   return (
@@ -205,7 +284,7 @@ export default function StudentDashboard() {
         onLogout={handleLogout}
         classId={classId}
         rollNumber={rollNumber}
-        onReportClick={() => setReportModal(true)}
+        onReportClick={openNewReportModal}
       />
 
       <div className="max-w-2xl mx-auto px-4 py-8">
@@ -454,9 +533,9 @@ export default function StudentDashboard() {
                               <h4 className="font-semibold text-sm">{work.title}</h4>
                               {status && (
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${status.type === 'danger' ? 'bg-red-900/40 text-red-400' :
-                                    status.type === 'urgent' ? 'bg-orange-900/40 text-orange-400' :
-                                      status.type === 'warning' ? 'bg-yellow-900/40 text-yellow-400' :
-                                        'bg-green-900/40 text-green-400'
+                                  status.type === 'urgent' ? 'bg-orange-900/40 text-orange-400' :
+                                    status.type === 'warning' ? 'bg-yellow-900/40 text-yellow-400' :
+                                      'bg-green-900/40 text-green-400'
                                   }`}>
                                   {status.text}
                                 </span>
@@ -583,6 +662,26 @@ export default function StudentDashboard() {
                       <p className="text-sm text-[var(--text-dim)]">{report.adminResponse}</p>
                     </div>
                   )}
+
+                  <div className="mt-3 flex justify-end gap-2">
+                    {report.status === 'pending' && (
+                      <button
+                        onClick={() => handleEditReportClick(report)}
+                        className="text-xs flex items-center gap-1 px-2 py-1 rounded text-[var(--text-dim)] hover:text-blue-400 hover:bg-blue-500/10 transition"
+                      >
+                        Edit Report
+                      </button>
+                    )}
+
+                    {report.status !== 'pending' && (
+                      <button
+                        onClick={() => handleDeleteReport(report._id)}
+                        className="text-xs flex items-center gap-1 px-2 py-1 rounded text-[var(--text-dim)] hover:text-red-400 hover:bg-red-500/10 transition"
+                      >
+                        Delete Report
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

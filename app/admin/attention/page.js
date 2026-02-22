@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, X, BookOpen, Calendar as CalendarIcon, Trash2 } from 'lucide-react';
+import { Plus, X, Edit2, Trash2 } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
 import { useNotification } from '@/app/components/Notification';
@@ -15,6 +15,7 @@ export default function AdminAttention() {
     const [announcements, setAnnouncements] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
+    const [editingAnnouncementId, setEditingAnnouncementId] = useState(null);
 
     // Form state
     const [formTitle, setFormTitle] = useState('');
@@ -65,7 +66,26 @@ export default function AdminAttention() {
         setFormDescription('');
         setFormSubjectId('');
         setFormDueDate('');
+        setEditingAnnouncementId(null);
         setShowForm(false);
+    };
+
+    const handleFormToggle = () => {
+        if (showForm) {
+            resetForm();
+            return;
+        }
+        setShowForm(true);
+    };
+
+    const handleEdit = (announcement) => {
+        const matchedSubject = subjects.find(s => s._id === announcement.subjectId || s.name === announcement.subjectName);
+        setEditingAnnouncementId(announcement._id);
+        setFormTitle(announcement.title || '');
+        setFormDescription(announcement.description || '');
+        setFormSubjectId(matchedSubject?._id || '');
+        setFormDueDate(announcement.dueDate ? new Date(announcement.dueDate).toISOString().split('T')[0] : '');
+        setShowForm(true);
     };
 
     const handleSubmit = async (e) => {
@@ -80,20 +100,27 @@ export default function AdminAttention() {
         const selectedSubject = subjects.find(s => s._id === formSubjectId);
 
         try {
-            await api.post('/announcements', {
+            const payload = {
                 classId,
                 title: formTitle,
                 description: formDescription,
                 subjectId: formSubjectId || null,
                 subjectName: selectedSubject ? selectedSubject.name : 'General',
                 dueDate: formDueDate || null
-            });
+            };
 
-            notify({ message: 'Announcement posted!', type: 'success' });
+            if (editingAnnouncementId) {
+                await api.patch(`/announcements/${editingAnnouncementId}`, payload);
+                notify({ message: 'Announcement updated!', type: 'success' });
+            } else {
+                await api.post('/announcements', payload);
+                notify({ message: 'Announcement posted!', type: 'success' });
+            }
+
             resetForm();
             loadAnnouncements(classId);
         } catch (err) {
-            notify({ message: 'Failed to post announcement', type: 'error' });
+            notify({ message: editingAnnouncementId ? 'Failed to update announcement' : 'Failed to post announcement', type: 'error' });
         } finally {
             setSubmitting(false);
         }
@@ -153,7 +180,7 @@ export default function AdminAttention() {
                         <p className="text-[var(--text-dim)] text-sm">{className}</p>
                     </div>
                     <button
-                        onClick={() => setShowForm(!showForm)}
+                        onClick={handleFormToggle}
                         className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition ${showForm
                             ? 'bg-red-900/20 border border-red-500/40 text-red-400'
                             : 'bg-blue-900/20 border border-blue-500/40 text-blue-400 hover:bg-blue-900/30'
@@ -167,7 +194,9 @@ export default function AdminAttention() {
                 {/* Create Form */}
                 {showForm && (
                     <div className="card mb-6 border-blue-500/30 bg-blue-900/5">
-                        <h2 className="text-sm uppercase text-blue-400 mb-4">New Announcement</h2>
+                        <h2 className="text-sm uppercase text-blue-400 mb-4">
+                            {editingAnnouncementId ? 'Edit Announcement' : 'New Announcement'}
+                        </h2>
                         <form onSubmit={handleSubmit} className="space-y-4">
 
                             {/* Title */}
@@ -227,7 +256,9 @@ export default function AdminAttention() {
                                 disabled={submitting}
                                 className="btn btn-primary w-full"
                             >
-                                {submitting ? 'Posting...' : 'Post Announcement'}
+                                {submitting
+                                    ? (editingAnnouncementId ? 'Updating...' : 'Posting...')
+                                    : (editingAnnouncementId ? 'Update Announcement' : 'Post Announcement')}
                             </button>
                         </form>
                     </div>
@@ -285,14 +316,22 @@ export default function AdminAttention() {
                                             </div>
                                         </div>
 
-                                        {/* Delete button */}
-                                        <button
-                                            onClick={() => handleDelete(announcement._id)}
-                                            className="flex-shrink-0 p-1.5 rounded-full hover:bg-red-900/20 text-[var(--text-dim)] hover:text-red-400 transition"
-                                            title="Delete"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        <div className="flex-shrink-0 flex items-center gap-1">
+                                            <button
+                                                onClick={() => handleEdit(announcement)}
+                                                className="p-1.5 rounded-full hover:bg-blue-900/20 text-[var(--text-dim)] hover:text-blue-400 transition"
+                                                title="Edit"
+                                            >
+                                                <Edit2 className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(announcement._id)}
+                                                className="p-1.5 rounded-full hover:bg-red-900/20 text-[var(--text-dim)] hover:text-red-400 transition"
+                                                title="Delete"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             );

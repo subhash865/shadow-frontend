@@ -62,6 +62,8 @@ export default function Home() {
         const adminToken = localStorage.getItem('token');
         const studentClassId = localStorage.getItem('studentClassId');
         const studentRoll = localStorage.getItem('studentRoll');
+        const studentClassName = localStorage.getItem('studentClassName');
+        const studentToken = localStorage.getItem('studentToken');
 
         // Auto-redirect: Admin with valid token
         if (adminClassId && adminToken) {
@@ -82,8 +84,18 @@ export default function Home() {
 
         // Auto-redirect: Returning student
         if (studentClassId && studentRoll) {
-            api.get(`/class/${studentClassId}`)
-                .then(res => {
+            const ensureToken = studentToken
+                ? Promise.resolve()
+                : (studentClassName
+                    ? api.post('/student/access', { className: studentClassName, rollNumber: studentRoll })
+                        .then((accessRes) => {
+                            localStorage.setItem('studentToken', accessRes.data.token);
+                        })
+                    : Promise.reject(new Error('Missing student session data')));
+
+            ensureToken
+                .then(() => api.get(`/class/${studentClassId}`))
+                .then(() => {
                     // Class still exists — redirect to student dashboard
                     router.push(`/student/${studentClassId}/${studentRoll}`);
                 })
@@ -91,6 +103,7 @@ export default function Home() {
                     localStorage.removeItem('studentClassId');
                     localStorage.removeItem('studentRoll');
                     localStorage.removeItem('studentClassName');
+                    localStorage.removeItem('studentToken');
                     setSessionChecked(true);
                 });
             return;
@@ -108,14 +121,20 @@ export default function Home() {
         e.preventDefault();
         setLoading(true);
         try {
-            const res = await api.get(`/class/lookup/${className.trim()}`);
+            const res = await api.post('/student/access', {
+                className: className.trim(),
+                rollNumber: String(rollNumber).trim()
+            });
+
             const classId = res.data.classId;
+            const normalizedRollNumber = res.data.rollNumber;
             localStorage.setItem('studentClassId', classId);
-            localStorage.setItem('studentRoll', rollNumber);
-            localStorage.setItem('studentClassName', className.trim());
-            router.push(`/student/${classId}/${rollNumber}`);
+            localStorage.setItem('studentRoll', normalizedRollNumber);
+            localStorage.setItem('studentClassName', res.data.className || className.trim());
+            localStorage.setItem('studentToken', res.data.token);
+            router.push(`/student/${classId}/${normalizedRollNumber}`);
         } catch (err) {
-            notify({ message: "Class not found! Check the name.", type: 'error' });
+            notify({ message: err.response?.data?.error || "Class or roll number not found.", type: 'error' });
             setLoading(false);
         }
     };
@@ -206,7 +225,7 @@ export default function Home() {
 
                             <input
                                 id="student-roll-number"
-                                type="number"
+                                type="text"
                                 className="input mb-5"
                                 placeholder="Roll Number"
                                 value={rollNumber}
@@ -255,7 +274,7 @@ export default function Home() {
 
                                 <button
                                     id="admin-setup-btn"
-                                    onClick={() => router.push('/admin/setup')}
+                                    onClick={() => router.push('/admin/create')}
                                     className="w-full py-3.5 px-5 rounded-xl border border-emerald-500/20 bg-emerald-950/20 hover:bg-emerald-950/40 transition-all flex items-center justify-between group"
                                 >
                                     <div className="text-left">

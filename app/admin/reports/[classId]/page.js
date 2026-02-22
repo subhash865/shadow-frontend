@@ -33,8 +33,11 @@ export default function AdminReports() {
             });
     }, [classId]);
 
-    const handleUpdateStatus = async (reportId, status) => {
-        if (!confirm(`Mark this report as ${status}?`)) return;
+    const handleUpdateStatus = async (e, reportId, status) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
 
         setActionLoading(true);
         try {
@@ -56,17 +59,23 @@ export default function AdminReports() {
             setRespondingTo(null);
             setAdminResponse('');
         } catch (err) {
-            notify({ message: "Failed to update report", type: 'error' });
+            notify({ message: err.response?.data?.error || "Failed to update report", type: 'error' });
         } finally {
             setActionLoading(false);
         }
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('adminClassId');
+        localStorage.removeItem('token');
+        router.push('/');
     };
 
     if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading Reports...</div>;
 
     return (
         <>
-            <Navbar isAdmin={true} onLogout={() => router.push('/')} />
+            <Navbar isAdmin={true} onLogout={handleLogout} />
 
             <div className="max-w-4xl mx-auto px-4 py-8">
                 <div className="flex items-center gap-4 mb-8">
@@ -102,8 +111,8 @@ export default function AdminReports() {
                                         </p>
                                     </div>
                                     <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${report.status === 'resolved' ? 'bg-green-900/30 text-green-400 border border-green-500/30' :
-                                            report.status === 'rejected' ? 'bg-red-900/30 text-red-400 border border-red-500/30' :
-                                                'bg-orange-900/30 text-orange-400 border border-orange-500/30'
+                                        report.status === 'rejected' ? 'bg-red-900/30 text-red-400 border border-red-500/30' :
+                                            'bg-orange-900/30 text-orange-400 border border-orange-500/30'
                                         }`}>
                                         {report.status}
                                     </span>
@@ -132,20 +141,23 @@ export default function AdminReports() {
                                                 />
                                                 <div className="flex justify-end gap-2">
                                                     <button
-                                                        onClick={() => setRespondingTo(null)}
+                                                        type="button"
+                                                        onClick={(e) => setRespondingTo(null)}
                                                         className="btn btn-outline text-xs px-3 py-1.5"
                                                     >
                                                         Cancel
                                                     </button>
                                                     <button
-                                                        onClick={() => handleUpdateStatus(report._id, 'rejected')}
+                                                        type="button"
+                                                        onClick={async (e) => { await handleUpdateStatus(e, report._id, 'rejected'); }}
                                                         className="btn bg-red-900/20 text-red-400 border-red-500/30 hover:bg-red-900/40 text-xs px-3 py-1.5"
                                                         disabled={actionLoading}
                                                     >
                                                         Reject
                                                     </button>
                                                     <button
-                                                        onClick={() => handleUpdateStatus(report._id, 'resolved')}
+                                                        type="button"
+                                                        onClick={async (e) => { await handleUpdateStatus(e, report._id, 'resolved'); }}
                                                         className="btn btn-primary text-xs px-3 py-1.5"
                                                         disabled={actionLoading}
                                                     >
@@ -156,7 +168,8 @@ export default function AdminReports() {
                                         ) : (
                                             <div className="flex gap-2">
                                                 <button
-                                                    onClick={() => setRespondingTo(report._id)}
+                                                    type="button"
+                                                    onClick={(e) => { e.preventDefault(); setRespondingTo(report._id); }}
                                                     className="btn btn-outline flex-1 flex items-center justify-center gap-2"
                                                 >
                                                     <MessageSquare className="w-4 h-4" />

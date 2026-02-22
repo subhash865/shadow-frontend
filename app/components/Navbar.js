@@ -62,7 +62,7 @@ export default function Navbar({ isAdmin = false, isStudent = false, onLogout, o
     );
 
     return (
-        <nav className="border-b border-white/6 sticky top-0 z-50 glass">
+        <nav className="border-b border-white/6 sticky top-0 z-50 glass bg-black/95">
             <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
                 {/* Logo */}
                 <Link href="/" className="flex items-center gap-2.5 group">

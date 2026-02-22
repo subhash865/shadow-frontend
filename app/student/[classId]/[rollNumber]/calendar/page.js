@@ -1,67 +1,85 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
 import Calendar from '@/app/components/Calendar';
 import api from '@/utils/api';
+import useSWR from 'swr';
 
 export default function StudentCalendar() {
     const params = useParams();
     const { classId, rollNumber } = params;
     const router = useRouter();
-    const [loading, setLoading] = useState(true);
-    const [className, setClassName] = useState('');
-    const [selectedDate, setSelectedDate] = useState('');
-    const [dayAttendance, setDayAttendance] = useState(null);
-    const [attendanceDates, setAttendanceDates] = useState([]);
+    const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+    const fetcher = (url) => api.get(url).then((res) => res.data);
+    const reportKey = classId && rollNumber ? `/student/report/${classId}/${rollNumber}` : null;
+    const datesKey = classId ? `/attendance/dates/${classId}` : null;
+    const dayAttendanceKey = classId && rollNumber && selectedDate
+        ? `/student/day-attendance/${classId}/${rollNumber}/${selectedDate}`
+        : null;
+    const reportCacheKey = classId && rollNumber ? `cls_config_${classId}_${rollNumber}` : null;
+    const subjectCacheKey = classId ? `cls_subjects_${classId}` : null;
 
-    useEffect(() => {
-        if (!classId || !rollNumber) return;
-
-        // Set today as default
-        const today = new Date().toISOString().split('T')[0];
-        setSelectedDate(today);
-
-        // Fetch class name
-        api.get(`/student/report/${classId}/${rollNumber}`)
-            .then(res => {
-                setClassName(res.data.className);
-                setLoading(false);
-            })
-            .catch(err => {
-                console.error("Fetch Error:", err);
-                setLoading(false);
-            });
-
-        // Fetch attendance dates
-        api.get(`/attendance/dates/${classId}`)
-            .then(res => {
-                const formattedDates = (res.data.dates || []).map(dateStr => {
-                    return new Date(dateStr).toISOString().split('T')[0];
-                });
-                setAttendanceDates(formattedDates);
-            })
-            .catch(() => { });
-    }, [classId, rollNumber]);
-
-    // Load day-specific attendance when date changes
-    useEffect(() => {
-        if (classId && selectedDate && rollNumber) {
-            api.get(`/student/day-attendance/${classId}/${rollNumber}/${selectedDate}`)
-                .then(res => {
-                    setDayAttendance(res.data);
-                })
-                .catch(err => {
-                    setDayAttendance(null);
-                    console.log("No attendance for this date");
-                });
+    const getCachedReport = () => {
+        if (typeof window === 'undefined' || !reportCacheKey) return null;
+        try {
+            return JSON.parse(localStorage.getItem(reportCacheKey) || 'null');
+        } catch {
+            return null;
         }
-    }, [selectedDate, classId, rollNumber]);
+    };
+
+    const swrConfig = {
+        revalidateOnFocus: false,
+        dedupingInterval: 30000,
+        shouldRetryOnError: true,
+        errorRetryCount: 3,
+        errorRetryInterval: 5000
+    };
+
+    const { data: reportData, isLoading: reportLoading } = useSWR(
+        reportKey,
+        fetcher,
+        {
+            ...swrConfig,
+            fallbackData: getCachedReport(),
+            onSuccess: (resData) => {
+                if (typeof window !== 'undefined') {
+                    if (reportCacheKey) {
+                        localStorage.setItem(reportCacheKey, JSON.stringify(resData));
+                    }
+                    if (subjectCacheKey && Array.isArray(resData?.subjects)) {
+                        localStorage.setItem(subjectCacheKey, JSON.stringify(resData.subjects));
+                    }
+                }
+            }
+        }
+    );
+
+    const { data: attendanceDatesResponse, isLoading: datesLoading } = useSWR(
+        datesKey,
+        fetcher,
+        swrConfig
+    );
+
+    const { data: dayAttendanceData, isLoading: dayLoading } = useSWR(
+        dayAttendanceKey,
+        fetcher,
+        swrConfig
+    );
+
+    const className = reportData?.className || '';
+    const attendanceDates = (attendanceDatesResponse?.dates || []).map((dateStr) =>
+        new Date(dateStr).toISOString().split('T')[0]
+    );
+    const dayAttendance = dayAttendanceData || null;
+    const loading = (reportLoading && !reportData) || (datesLoading && !attendanceDatesResponse) || (dayLoading && !dayAttendanceData);
 
     const handleLogout = () => {
         localStorage.removeItem('studentClassId');
         localStorage.removeItem('studentRoll');
         localStorage.removeItem('studentClassName');
+        localStorage.removeItem('studentToken');
         router.push('/');
     };
 
@@ -84,7 +102,12 @@ export default function StudentCalendar() {
         });
     };
 
-    if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!mounted || loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
 
     return (
         <>
