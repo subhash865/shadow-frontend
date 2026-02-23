@@ -5,10 +5,12 @@ import { Plus, X, Edit2, Trash2 } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
 import api from '@/utils/api';
 import { useNotification } from '@/app/components/Notification';
+import { useConfirm } from '@/app/components/ConfirmDialog';
 
 export default function AdminAttention() {
     const router = useRouter();
     const notify = useNotification();
+    const confirm = useConfirm();
     const [classId, setClassId] = useState(null);
     const [className, setClassName] = useState('');
     const [subjects, setSubjects] = useState([]);
@@ -127,6 +129,9 @@ export default function AdminAttention() {
     };
 
     const handleDelete = async (id) => {
+        const ok = await confirm('Delete Announcement?', 'This will permanently remove this announcement for all students.', { confirmText: 'Delete', type: 'danger' });
+        if (!ok) return;
+
         try {
             await api.delete(`/announcements/${id}`);
             notify({ message: 'Announcement deleted', type: 'success' });
