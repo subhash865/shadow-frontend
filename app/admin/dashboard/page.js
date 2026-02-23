@@ -5,7 +5,7 @@ import {
     Save, Plus, X, Calendar as CalendarIcon,
     RotateCcw, FileText, Clock, CheckCircle,
     AlertTriangle, Loader2, Camera, Lock, LockOpen,
-    ZoomIn, ZoomOut, Move, Crop as CropIcon, RefreshCw, Smartphone
+    ZoomIn, ZoomOut, Move, Crop as CropIcon, RefreshCw, Smartphone, Shield
 } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
 import Calendar from '@/app/components/Calendar';
@@ -83,6 +83,10 @@ export default function AdminDashboard() {
     const [imageToCrop, setImageToCrop] = useState(null);
     const [showScanTypeModal, setShowScanTypeModal] = useState(false);
     const [scanType, setScanType] = useState('handwritten'); // 'handwritten' or 'app'
+    const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+    const [blockedRollNumbers, setBlockedRollNumbers] = useState([]);
+    const [privacySearchQuery, setPrivacySearchQuery] = useState('');
+    const [togglingRoll, setTogglingRoll] = useState(null);
     const fileInputRef = useRef(null);
     const autoRelockTimerRef = useRef(null);
     const cropperRef = useRef(null);
@@ -180,6 +184,7 @@ export default function AdminDashboard() {
             setSubjects(subjectsList);
             setClassName(classRes.data.className);
             setClassRollNumbers(normalizedClassRollNumbers);
+            setBlockedRollNumbers(classRes.data.blockedRollNumbers || []);
 
             // Format attendance dates
             const formattedDates = (datesRes.data.dates || []).map(dateStr => {
@@ -680,7 +685,21 @@ export default function AdminDashboard() {
         });
     };
 
-
+    const toggleBlockStudent = async (rollNumber) => {
+        if (!classId || togglingRoll) return;
+        setTogglingRoll(rollNumber);
+        const isCurrentlyBlocked = blockedRollNumbers.includes(rollNumber);
+        const endpoint = isCurrentlyBlocked ? 'unblock-student' : 'block-student';
+        try {
+            const res = await api.patch(`/class/${classId}/${endpoint}`, { rollNumber });
+            setBlockedRollNumbers(res.data.blockedRollNumbers || []);
+            notify({ message: isCurrentlyBlocked ? `Roll ${rollNumber} unblocked` : `Roll ${rollNumber} blocked`, type: 'success' });
+        } catch (err) {
+            notify({ message: err.response?.data?.error || 'Failed to update privacy', type: 'error' });
+        } finally {
+            setTogglingRoll(null);
+        }
+    };
 
     if (loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
 
@@ -825,6 +844,13 @@ export default function AdminDashboard() {
                                 <Plus className="w-3.5 h-3.5" />
                                 Add Student
                             </button> */}
+                            <button
+                                onClick={() => setShowPrivacyModal(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-medium hover:bg-purple-500/15 transition"
+                            >
+                                <Shield className="w-3.5 h-3.5" />
+                                Privacy{blockedRollNumbers.length > 0 ? ` (${blockedRollNumbers.length})` : ''}
+                            </button>
                             {pendingReports > 0 && (
                                 <button
                                     onClick={() => router.push(`/admin/reports/${classId}`)}
@@ -1187,6 +1213,85 @@ export default function AdminDashboard() {
                                     )}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {showPrivacyModal && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
+                        <div className="w-full max-w-md glass-card !mb-0 shadow-2xl max-h-[80vh] flex flex-col">
+                            <div className="flex justify-between items-center mb-4">
+                                <div>
+                                    <h2 className="text-xl font-bold flex items-center gap-2">
+                                        <Shield className="w-5 h-5 text-purple-400" />
+                                        Manage Privacy
+                                    </h2>
+                                    <p className="text-xs text-[var(--text-dim)] mt-1">
+                                        Blocked students cannot view their attendance
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => { setShowPrivacyModal(false); setPrivacySearchQuery(''); }}
+                                    className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition border border-white/10"
+                                >
+                                    <X className="w-4 h-4 text-white" />
+                                </button>
+                            </div>
+
+                            <input
+                                type="text"
+                                className="input mb-3"
+                                placeholder="Search roll number..."
+                                value={privacySearchQuery}
+                                onChange={(e) => setPrivacySearchQuery(e.target.value)}
+                            />
+
+                            <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+                                {classRollNumbers
+                                    .filter(roll => !privacySearchQuery || roll.toLowerCase().includes(privacySearchQuery.toLowerCase()))
+                                    .map(roll => {
+                                        const isBlocked = blockedRollNumbers.includes(roll);
+                                        return (
+                                            <div
+                                                key={roll}
+                                                className={`flex items-center justify-between px-3 py-2.5 rounded-xl border transition ${isBlocked
+                                                        ? 'bg-red-900/10 border-red-500/20'
+                                                        : 'bg-white/3 border-white/6 hover:border-white/12'
+                                                    }`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-sm font-medium">Roll {roll}</span>
+                                                    {isBlocked && (
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-900/30 border border-red-500/30 text-red-400 font-medium">
+                                                            Blocked
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => toggleBlockStudent(roll)}
+                                                    disabled={togglingRoll === roll}
+                                                    className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${isBlocked
+                                                            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
+                                                            : 'bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20'
+                                                        } ${togglingRoll === roll ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                >
+                                                    {togglingRoll === roll ? (
+                                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                                    ) : isBlocked ? 'Unblock' : 'Block'}
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                {classRollNumbers.filter(roll => !privacySearchQuery || roll.toLowerCase().includes(privacySearchQuery.toLowerCase())).length === 0 && (
+                                    <p className="text-center text-sm text-[var(--text-dim)] py-8">No matching students</p>
+                                )}
+                            </div>
+
+                            {blockedRollNumbers.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-white/6 text-xs text-[var(--text-dim)]">
+                                    {blockedRollNumbers.length} student{blockedRollNumbers.length > 1 ? 's' : ''} currently blocked
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

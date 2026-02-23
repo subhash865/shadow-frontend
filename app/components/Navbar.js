@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
     LayoutDashboard, Calendar, FileText,
-    AlertTriangle, LogOut, Zap, BookOpen, Flag, Menu, X
+    AlertTriangle, LogOut, Zap, BookOpen, Flag, Menu, X, HelpCircle
 } from 'lucide-react';
 
 export default function Navbar({ isAdmin = false, isStudent = false, onLogout, onReportClick, classId, rollNumber }) {
@@ -89,14 +89,15 @@ export default function Navbar({ isAdmin = false, isStudent = false, onLogout, o
                     <div className="max-w-5xl mx-auto px-4 py-3 space-y-0.5">
                         {isAdmin ? (
                             <>
-                             <NavLink href="/admin/attention" icon={AlertTriangle} label="Attention" />
-                              <NavLink href="/admin/subjects" icon={BookOpen} label="Subjects" />
+                                <NavLink href="/admin/attention" icon={AlertTriangle} label="Attention" />
+                                <NavLink href="/admin/subjects" icon={BookOpen} label="Subjects" />
                                 <NavLink href="/admin/dashboard" icon={LayoutDashboard} label="Attendance" />
-                            
+
                                 {navClassId && (
                                     <NavLink href={`/admin/reports/${navClassId}`} icon={FileText} label="Reports" />
                                 )}
                                 <div className="border-t border-white/6 my-2"></div>
+                                <NavLink href="/guide" icon={HelpCircle} label="Guide" />
                                 <NavButton onClick={onLogout} icon={LogOut} label="Logout" danger />
                             </>
                         ) : isStudent ? (
@@ -109,6 +110,7 @@ export default function Navbar({ isAdmin = false, isStudent = false, onLogout, o
                                     <NavButton onClick={onReportClick} icon={Flag} label="Report Issue" />
                                 )}
                                 <div className="border-t border-white/6 my-2"></div>
+                                <NavLink href="/guide" icon={HelpCircle} label="Guide" />
                                 <NavButton onClick={onLogout} icon={LogOut} label="Logout" danger />
                             </>
                         ) : null}

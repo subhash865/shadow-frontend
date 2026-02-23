@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/app/components/Navbar';
+import NotificationSetup from '@/app/components/NotificationSetup';
 import api from '@/utils/api';
 import Calendar from '@/app/components/Calendar';
 import useSWR from 'swr';
@@ -224,8 +225,13 @@ export default function StudentAttention() {
 
                 {/* Header */}
                 <div className="mb-6">
-                    <h1 className="text-2xl font-bold mb-1">Attention Board</h1>
-                    <p className="text-[var(--text-dim)] text-sm">{className} - Roll No. {rollNumber}</p>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h1 className="text-2xl font-bold mb-1">Attention Board</h1>
+                            <p className="text-[var(--text-dim)] text-sm">{className} - Roll No. {rollNumber}</p>
+                        </div>
+                        <NotificationSetup classId={classId} rollNumber={rollNumber} />
+                    </div>
                 </div>
 
                 {/* Task Calendar */}

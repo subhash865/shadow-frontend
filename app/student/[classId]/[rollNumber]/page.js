@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/app/components/Navbar';
-import NotificationSetup from '@/app/components/NotificationSetup';
 import api from '@/utils/api';
 import { useConfirm } from '@/app/components/ConfirmDialog';
 import { useNotification } from '@/app/components/Notification';
@@ -21,7 +20,6 @@ export default function StudentDashboard() {
   const fetcher = url => api.get(url).then(res => res.data);
   const reportKey = classId && rollNumber ? `/student/report/${classId}/${rollNumber}` : null;
   const reportsKey = classId && rollNumber ? `/reports/${classId}/${rollNumber}` : null;
-  const announcementsKey = classId ? `/announcements/${classId}` : null;
   const reportCacheKey = classId && rollNumber ? `cls_config_${classId}_${rollNumber}` : null;
   const subjectCacheKey = classId ? `cls_subjects_${classId}` : null;
 
@@ -66,22 +64,6 @@ export default function StudentDashboard() {
     fetcher,
     swrConfig
   );
-
-  const { data: announcementsResponse } = useSWR(
-    announcementsKey,
-    fetcher,
-    swrConfig
-  );
-
-  const allAnnouncements = announcementsResponse?.announcements || [];
-
-  const now = new Date();
-  const announcementCount = allAnnouncements.filter(a => {
-    if (!a.dueDate) return false;
-    const due = new Date(a.dueDate);
-    const diff = due - now;
-    return diff > 0 && diff < 86400000;
-  }).length;
 
   const loading = reportLoading && !data;
 
@@ -158,18 +140,7 @@ export default function StudentDashboard() {
     }
   };
 
-  const getDeadlineStatus = (dueDate) => {
-    if (!dueDate) return null;
-    const now = new Date();
-    const due = new Date(dueDate);
-    const diffTime = due - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffTime < 0) return { text: `Overdue by ${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? 's' : ''}`, type: 'danger', days: diffDays };
-    if (diffDays === 0) return { text: 'Due Today', type: 'urgent', days: 0 };
-    if (diffDays === 1) return { text: 'Due Tomorrow', type: 'warning', days: 1 };
-    return { text: `${diffDays} days left`, type: 'safe', days: diffDays };
-  };
 
   // Fetching is now handled by SWR and localStorage caching above
 
@@ -259,14 +230,7 @@ export default function StudentDashboard() {
     }
   };
 
-  // Get urgent deadlines (Due within 24h)
-  const urgentTasks = allAnnouncements.filter(a => {
-    if (!a.dueDate) return false;
-    const due = new Date(a.dueDate);
-    const now = new Date();
-    const diff = due - now;
-    return diff > 0 && diff < 86400000; // Positive and less than 24h
-  });
+
 
   // Get subject specific works
   const subjectWorks = selectedSubjectId
@@ -307,104 +271,9 @@ export default function StudentDashboard() {
                 </p>
               )}
             </div>
-            <NotificationSetup classId={classId} rollNumber={rollNumber} />
           </div>
         </div>
 
-        {/* Recent Announcements */}
-        {allAnnouncements.length > 0 && (
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-sm uppercase font-bold text-red-400 flex items-center gap-2">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                </span>
-                📢 Announcements
-              </h2>
-              <Link
-                href={`/student/${classId}/${rollNumber}/attention`}
-                className="text-xs text-red-400 hover:text-red-300 transition font-semibold"
-              >
-                View All →
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {allAnnouncements.slice(0, 3).map(a => {
-                const deadline = getDeadlineStatus(a.dueDate);
-                const timeAgo = (() => {
-                  const diff = Date.now() - new Date(a.createdAt).getTime();
-                  const mins = Math.floor(diff / 60000);
-                  if (mins < 60) return `${mins}m ago`;
-                  const hrs = Math.floor(mins / 60);
-                  if (hrs < 24) return `${hrs}h ago`;
-                  const days = Math.floor(hrs / 24);
-                  return `${days}d ago`;
-                })();
-                return (
-                  <div key={a._id} className="card relative overflow-hidden bg-gradient-to-br from-red-950/20 to-transparent border-red-500/20">
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500"></div>
-                    <div className="pl-2">
-                      <div className="flex justify-between items-start mb-1">
-                        <h3 className="font-bold text-sm text-red-400">{a.title}</h3>
-                        {deadline && (
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex-shrink-0 ml-2 ${deadline.type === 'danger' ? 'bg-red-900/40 text-red-400' :
-                            deadline.type === 'urgent' ? 'bg-orange-900/40 text-orange-400' :
-                              deadline.type === 'warning' ? 'bg-yellow-900/40 text-yellow-400' :
-                                'bg-green-900/40 text-green-400'
-                            }`}>
-                            {deadline.text}
-                          </span>
-                        )}
-                      </div>
-                      {a.description && (
-                        <p className="text-xs text-gray-300 line-clamp-2 mb-2 font-medium">{a.description}</p>
-                      )}
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] bg-red-900/30 px-2 py-0.5 rounded text-red-300/80 uppercase font-bold tracking-wider">{a.subjectName || 'General'}</span>
-                        <span className="text-[10px] text-[var(--text-dim)]">{timeAgo}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Urgent Deadlines (Due in 24h) */}
-        {urgentTasks.length > 0 && (
-          <div className="card mb-6 bg-gradient-to-br from-red-900/10 to-transparent border-red-500/30">
-            <h2 className="text-sm font-semibold text-red-400 mb-3 flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-              </span>
-              Urgent Tasks (Due in 24h)
-            </h2>
-
-            <div className="space-y-3">
-              {urgentTasks.map(task => {
-                const status = getDeadlineStatus(task.dueDate);
-                return (
-                  <div key={task._id} className="p-3 rounded bg-[var(--bg)] border border-[var(--border)] relative overflow-hidden">
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500"></div>
-                    <div className="flex justify-between items-start mb-1 pl-2">
-                      <span className="font-semibold text-sm">{task.title}</span>
-                      <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">
-                        {status?.text}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[var(--text-dim)] line-clamp-2 pl-2">{task.description}</p>
-                    <p className="text-[10px] text-[var(--text-dim)] mt-2 pl-2">
-                      {task.subjectName || 'General'}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Minimum Attendance Slider */}
         <div className="card mb-6">
@@ -514,11 +383,6 @@ export default function StudentDashboard() {
             >
               <p className="text-2xl mb-2">📢</p>
               <p className="text-xs text-[var(--text-dim)] group-hover:text-orange-400 transition">Attention</p>
-              {announcementCount > 0 && (
-                <span className="absolute top-2 right-2 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1">
-                  {announcementCount}
-                </span>
-              )}
             </Link>
           </div>
         </div>
