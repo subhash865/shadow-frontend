@@ -312,12 +312,16 @@ export default function StudentDashboard() {
         {allAnnouncements.length > 0 && (
           <div className="mb-6">
             <div className="flex justify-between items-center mb-3">
-              <h2 className="text-sm uppercase text-[var(--text-dim)] flex items-center gap-2">
-                <span>📢</span> Recent Announcements
+              <h2 className="text-sm uppercase font-bold text-red-400 flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                </span>
+                📢 Announcements
               </h2>
               <Link
                 href={`/student/${classId}/${rollNumber}/attention`}
-                className="text-xs text-blue-400 hover:text-blue-300 transition"
+                className="text-xs text-red-400 hover:text-red-300 transition font-semibold"
               >
                 View All →
               </Link>
@@ -335,11 +339,11 @@ export default function StudentDashboard() {
                   return `${days}d ago`;
                 })();
                 return (
-                  <div key={a._id} className="card relative overflow-hidden">
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+                  <div key={a._id} className="card relative overflow-hidden bg-gradient-to-br from-red-950/20 to-transparent border-red-500/20">
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500"></div>
                     <div className="pl-2">
                       <div className="flex justify-between items-start mb-1">
-                        <h3 className="font-semibold text-sm text-white">{a.title}</h3>
+                        <h3 className="font-bold text-sm text-red-400">{a.title}</h3>
                         {deadline && (
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex-shrink-0 ml-2 ${deadline.type === 'danger' ? 'bg-red-900/40 text-red-400' :
                               deadline.type === 'urgent' ? 'bg-orange-900/40 text-orange-400' :
@@ -351,10 +355,10 @@ export default function StudentDashboard() {
                         )}
                       </div>
                       {a.description && (
-                        <p className="text-xs text-[var(--text-dim)] line-clamp-2 mb-2">{a.description}</p>
+                        <p className="text-xs text-gray-300 line-clamp-2 mb-2 font-medium">{a.description}</p>
                       )}
                       <div className="flex justify-between items-center">
-                        <span className="text-[10px] bg-[#222] px-2 py-0.5 rounded text-[var(--text-dim)] uppercase font-bold tracking-wider">{a.subjectName || 'General'}</span>
+                        <span className="text-[10px] bg-red-900/30 px-2 py-0.5 rounded text-red-300/80 uppercase font-bold tracking-wider">{a.subjectName || 'General'}</span>
                         <span className="text-[10px] text-[var(--text-dim)]">{timeAgo}</span>
                       </div>
                     </div>
