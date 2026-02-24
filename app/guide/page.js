@@ -478,7 +478,7 @@ export default function GuidePage() {
                             Built with 💀 by students who were too lazy to calculate attendance.
                         </p>
                         <p className="text-[10px] text-[var(--text-dim)] opacity-40 mt-2">
-                            Shadow v2.0 — &quot;Attendance is temporary, but your CGPA is forever.&quot;
+                            Shadow v2.0 — &quot;Attendance is temporary, but your CGPA is Mandatory.&quot;
                         </p>
                     </div>
                 </footer>

@@ -1,49 +1,16 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-    Calendar, Users, TrendingUp, Bell, Shield, Clock,
-    GraduationCap, School, ChevronRight, Zap, BarChart3,
-    BookOpen, ArrowRight, Sparkles
+    Calendar, Shield,
+    GraduationCap, School, ChevronRight,
+    ArrowRight
 } from 'lucide-react';
 import Navbar from './components/Navbar';
 import api from '@/utils/api';
 import { useNotification } from './components/Notification';
 
-// Animated counter hook
-function useCounter(target, duration = 2000) {
-    const [count, setCount] = useState(0);
-    const ref = useRef(null);
-    const started = useRef(false);
 
-    useEffect(() => {
-        if (!target || started.current) return;
-
-        const observer = new IntersectionObserver(
-            (entries) => {
-                if (entries[0].isIntersecting && !started.current) {
-                    started.current = true;
-                    const startTime = performance.now();
-                    const animate = (now) => {
-                        const elapsed = now - startTime;
-                        const progress = Math.min(elapsed / duration, 1);
-                        // Ease-out cubic
-                        const eased = 1 - Math.pow(1 - progress, 3);
-                        setCount(Math.floor(eased * target));
-                        if (progress < 1) requestAnimationFrame(animate);
-                    };
-                    requestAnimationFrame(animate);
-                }
-            },
-            { threshold: 0.3 }
-        );
-
-        if (ref.current) observer.observe(ref.current);
-        return () => observer.disconnect();
-    }, [target, duration]);
-
-    return { count, ref };
-}
 
 export default function Home() {
     const router = useRouter();
@@ -51,7 +18,7 @@ export default function Home() {
     const [className, setClassName] = useState('');
     const [rollNumber, setRollNumber] = useState('');
     const [loading, setLoading] = useState(false);
-    const [stats, setStats] = useState({ totalClasses: 0, totalStudents: 0 });
+
     const [sessionChecked, setSessionChecked] = useState(false);
     const [activeTab, setActiveTab] = useState('student');
 
@@ -112,9 +79,7 @@ export default function Home() {
         // No saved session — show landing page
         setSessionChecked(true);
 
-        api.get('/class/stats/all')
-            .then(res => setStats(res.data))
-            .catch(() => { });
+
     }, []);
 
     const handleStudentLogin = async (e) => {
@@ -152,8 +117,10 @@ export default function Home() {
             {/* ═══════════ HERO ═══════════ */}
             <section className="relative overflow-hidden">
                 {/* Gradient orbs */}
-                <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-blue-600/8 rounded-full blur-[120px] pointer-events-none"></div>
-                <div className="absolute bottom-[-20%] right-[-10%] w-[400px] h-[400px] bg-purple-600/6 rounded-full blur-[120px] pointer-events-none"></div>
+                <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-amber-500/5 rounded-full blur-[120px] pointer-events-none"></div>
+                <div className="absolute bottom-[-20%] right-[-10%] w-[400px] h-[400px] bg-yellow-500/4 rounded-full blur-[120px] pointer-events-none"></div>
+                {/* Centered yellow glow behind headline */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-yellow-400/6 rounded-full blur-[150px] pointer-events-none"></div>
 
                 <div className="max-w-5xl mx-auto px-4 pt-16 pb-12 relative">
                     <div className="text-center">
@@ -163,12 +130,15 @@ export default function Home() {
                         {/* Headline */}
                         <h1 className="animate-fade-up delay-100 text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.1]"
                             style={{ letterSpacing: '-0.04em' }}>
-                            <span className="bg-gradient-to-b from-white via-white to-gray-500 bg-clip-text text-transparent">
+                            <span className="bg-gradient-to-b from-white via-white to-gray-400 bg-clip-text text-transparent">
                                 Track attendance smartly,
                             </span>
                             <br />
-                            <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-violet-400 bg-clip-text text-transparent">
-                                plan your days wisely.
+                            <span className="relative inline-block">
+                                <span className="absolute -inset-x-16 -inset-y-8 bg-yellow-400/20 blur-[50px] rounded-full pointer-events-none"></span>
+                                <span className="relative bg-gradient-to-r from-amber-300 via-yellow-200 to-orange-300 bg-clip-text text-transparent">
+                                    plan your days wisely.
+                                </span>
                             </span>
                         </h1>
 
