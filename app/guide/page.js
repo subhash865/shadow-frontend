@@ -259,7 +259,7 @@ export default function GuidePage() {
                             Attendance is temporary, but your CGPA is Mandatory.
                         </p>
                         <p className="text-sm text-[var(--text-dim)] opacity-60">
-                            but attendance is necessary to write the exams
+                            But Minimum attendance is necessary to get the CGPA
                         </p>
 
                         <div className="flex justify-center gap-3 mt-8">
