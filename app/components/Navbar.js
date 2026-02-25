@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
     LayoutDashboard, Calendar, FileText,
-    AlertTriangle, LogOut, Zap, BookOpen, Flag, Menu, X, HelpCircle
+    AlertTriangle, LogOut, Zap, BookOpen, Flag, Menu, X, HelpCircle, Calculator
 } from 'lucide-react';
 
 export default function Navbar({ isAdmin = false, isStudent = false, onLogout, onReportClick, classId, rollNumber }) {
@@ -106,6 +106,7 @@ export default function Navbar({ isAdmin = false, isStudent = false, onLogout, o
                                 <NavLink href={`/student/${classId}/${rollNumber}`} icon={LayoutDashboard} label="Attendance" />
                                 <NavLink href={`/student/${classId}/${rollNumber}/calendar`} icon={Calendar} label="Calendar" />
                                 <NavLink href={`/student/${classId}/${rollNumber}/bunk-effect`} icon={Zap} label="Skip Effect" />
+                                <NavLink href={`/student/${classId}/${rollNumber}/calculator`} icon={Calculator} label="GPA Calculator" />
                                 {onReportClick && (
                                     <NavButton onClick={onReportClick} icon={Flag} label="Report Issue" />
                                 )}

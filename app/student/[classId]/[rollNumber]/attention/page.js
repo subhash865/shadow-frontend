@@ -234,67 +234,95 @@ export default function StudentAttention() {
                     </div>
                 </div>
 
-                {/* Task Calendar */}
-                <div className="mb-8">
-                    <div className="flex justify-between items-center mb-3">
-                        <h2 className="text-sm font-semibold text-[var(--text-dim)] uppercase">Deadlines & Tasks</h2>
-                        {selectedDate && (
-                            <button
-                                onClick={() => setSelectedDate(null)}
-                                className="text-xs text-blue-400 hover:text-white transition"
-                            >
-                                Clear Date Filter
-                            </button>
-                        )}
-                    </div>
+                {/* Task Calendar — collapsible, starts closed */}
+                <div className="mb-6">
                     <Calendar
                         taskDates={taskDates}
                         selectedDate={selectedDate || ''}
                         onSelectDate={handleDateSelect}
                         enableAllDates={true}
+                        collapsible={true}
+                        defaultExpanded={false}
                     />
-                    <div className="flex justify-center gap-4 mt-2 text-[10px] text-[var(--text-dim)]">
-                        <div className="flex items-center gap-1">
-                            <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                            <span>Task Due</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                            <div className="w-2 h-2 bg-blue-500 rounded-md"></div>
-                            <span>Selected</span>
-                        </div>
-                    </div>
+                    {selectedDate && (
+                        <button
+                            onClick={() => setSelectedDate(null)}
+                            className="mt-2 text-xs text-blue-400 hover:text-white transition flex items-center gap-1"
+                        >
+                            <span>✕</span> Clear date filter
+                        </button>
+                    )}
                 </div>
 
-                {/* Subject Filter Row */}
+                {/* Premium Filter Bar */}
                 {filterOptions.length > 0 && (
                     <div className="mb-6">
-                        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                        {/* Stats row */}
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs font-semibold text-white/30 uppercase tracking-wider">
+                                {filtered.length} {filtered.length === 1 ? 'task' : 'tasks'}
+                                {selectedDate ? ` on ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+                            </p>
+                            {(filterSubject !== 'all' || filterUrgency === 'urgent' || selectedDate) && (
+                                <button
+                                    onClick={() => { setFilterSubject('all'); setFilterUrgency('all'); setSelectedDate(null); }}
+                                    className="text-[10px] text-white/30 hover:text-white/70 transition"
+                                >
+                                    Reset all
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Filter pills */}
+                        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar scroll-smooth">
+
+                            {/* Urgent toggle — special red style */}
                             <button
                                 onClick={() => setFilterUrgency(filterUrgency === 'urgent' ? 'all' : 'urgent')}
-                                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition ${filterUrgency === 'urgent'
-                                    ? 'bg-red-900/20 text-red-400 border border-red-500/30'
-                                    : 'bg-[var(--card-bg)] text-[var(--text-dim)] border border-[var(--border)] hover:border-white/30'
-                                    }`}
+                                className={`
+                                    flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold
+                                    whitespace-nowrap transition-all duration-200 border
+                                    ${filterUrgency === 'urgent'
+                                        ? 'bg-red-500/15 border-red-500/50 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.15)]'
+                                        : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
+                                    }
+                                `}
                             >
-                                🔴 Urgent
+                                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${filterUrgency === 'urgent' ? 'bg-red-400' : 'bg-white/20'}`} />
+                                Urgent
                             </button>
+
+                            {/* Divider */}
+                            <div className="flex-shrink-0 w-px bg-white/8 my-1" />
+
+                            {/* All Subjects */}
                             <button
                                 onClick={() => setFilterSubject('all')}
-                                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition ${filterSubject === 'all'
-                                    ? 'bg-blue-900/20 text-blue-400 border border-blue-500/30'
-                                    : 'bg-[var(--card-bg)] text-[var(--text-dim)] border border-[var(--border)] hover:border-white/30'
-                                    }`}
+                                className={`
+                                    flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold
+                                    whitespace-nowrap transition-all duration-200 border
+                                    ${filterSubject === 'all'
+                                        ? 'bg-blue-500/15 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
+                                        : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
+                                    }
+                                `}
                             >
-                                All Subjects
+                                All
                             </button>
+
+                            {/* Subject pills */}
                             {filterOptions.map(sub => (
                                 <button
                                     key={sub}
-                                    onClick={() => setFilterSubject(sub)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition ${filterSubject === sub
-                                        ? 'bg-blue-900/20 text-blue-400 border border-blue-500/30'
-                                        : 'bg-[var(--card-bg)] text-[var(--text-dim)] border border-[var(--border)] hover:border-white/30'
-                                        }`}
+                                    onClick={() => setFilterSubject(sub === filterSubject ? 'all' : sub)}
+                                    className={`
+                                        flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold
+                                        whitespace-nowrap transition-all duration-200 border
+                                        ${filterSubject === sub
+                                            ? 'bg-blue-500/15 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
+                                            : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
+                                        }
+                                    `}
                                 >
                                     {sub}
                                 </button>
@@ -315,7 +343,7 @@ export default function StudentAttention() {
                 {/* Task List */}
                 {filtered.length > 0 ? (
                     <div className="space-y-3">
-                        {filtered.map(renderCard)}
+                        {filtered.map(a => renderCard(a))}
                     </div>
                 ) : (
                     <div className="card text-center py-12 border-dashed border-[var(--border)]">

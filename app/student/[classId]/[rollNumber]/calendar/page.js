@@ -69,11 +69,14 @@ export default function StudentCalendar() {
     );
 
     const className = reportData?.className || '';
+    // Fix: extract date part directly to avoid UTC→local day shift (e.g. Feb 25 UTC midnight → Feb 24 IST)
     const attendanceDates = (attendanceDatesResponse?.dates || []).map((dateStr) =>
-        new Date(dateStr).toISOString().split('T')[0]
+        String(dateStr).split('T')[0]
     );
     const dayAttendance = dayAttendanceData || null;
-    const loading = (reportLoading && !reportData) || (datesLoading && !attendanceDatesResponse) || (dayLoading && !dayAttendanceData);
+    // Fix: exclude dayLoading from the main gate — including it causes the page to fully
+    // remount each time a date is selected, which resets selectedDate back to today.
+    const loading = (reportLoading && !reportData) || (datesLoading && !attendanceDatesResponse);
 
     const handleLogout = () => {
         localStorage.removeItem('studentClassId');
@@ -136,7 +139,9 @@ export default function StudentCalendar() {
                             Attendance for {formatDateDisplay(selectedDate)}
                         </h2>
 
-                        {!dayAttendance || !dayAttendance.periods || dayAttendance.periods.length === 0 ? (
+                        {dayLoading ? (
+                            <p className="text-center text-[var(--text-dim)] py-8 animate-pulse">Loading...</p>
+                        ) : !dayAttendance || !dayAttendance.periods || dayAttendance.periods.length === 0 ? (
                             <p className="text-center text-[var(--text-dim)] py-8">No classes on this day</p>
                         ) : (
                             <div className="space-y-3">

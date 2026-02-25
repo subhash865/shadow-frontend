@@ -112,9 +112,13 @@ export default function BunkEffect() {
 
         // Calculate classes needed to recover if below minimum
         let classesToRecover = 0;
-        if (afterPercentage < minPercentage && afterTotal > 0) {
-            classesToRecover = Math.ceil(
-                ((minPercentage / 100) * afterTotal - afterAttended) / (1 - (minPercentage / 100))
+        const denominator = 1 - (minPercentage / 100);
+        if (afterPercentage < minPercentage && afterTotal > 0 && denominator > 0) {
+            classesToRecover = Math.max(
+                0,
+                Math.ceil(
+                    ((minPercentage / 100) * afterTotal - afterAttended) / denominator
+                )
             );
         }
 

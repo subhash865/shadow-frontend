@@ -21,6 +21,13 @@ export default function AdminReports() {
     useEffect(() => {
         if (!classId) return;
 
+        // Bug 3 fix: Guard against unauthenticated access
+        const storedClassId = localStorage.getItem('adminClassId');
+        if (!storedClassId) {
+            router.push('/admin/login');
+            return;
+        }
+
         api.get(`/reports/class/${classId}`)
             .then(res => {
                 setReports(res.data.reports || []);
@@ -68,6 +75,11 @@ export default function AdminReports() {
     const handleLogout = () => {
         localStorage.removeItem('adminClassId');
         localStorage.removeItem('token');
+        // Clear student keys too (in case user had a student session in same browser)
+        localStorage.removeItem('studentClassId');
+        localStorage.removeItem('studentRoll');
+        localStorage.removeItem('studentClassName');
+        localStorage.removeItem('studentToken');
         router.push('/');
     };
 
@@ -107,7 +119,7 @@ export default function AdminReports() {
                                             <span className="text-base font-medium text-white">{report.subjectName}</span>
                                         </div>
                                         <p className="text-xs text-[var(--text-dim)]">
-                                            Issue Date: {new Date(report.date).toLocaleDateString()}
+                                            Issue Date: {new Date(report.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                                         </p>
                                     </div>
                                     <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${report.status === 'resolved' ? 'bg-green-900/30 text-green-400 border border-green-500/30' :

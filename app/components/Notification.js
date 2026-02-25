@@ -1,13 +1,12 @@
 'use client';
 import { useState, createContext, useContext, useCallback } from 'react';
-import { X, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, Info } from 'lucide-react';
 
 const NotificationContext = createContext(null);
 
 export function useNotification() {
     const context = useContext(NotificationContext);
     if (!context) {
-        // Fallback for when used outside provider or during SSR
         return ({ message }) => console.log('Notification:', message);
     }
     return context;
@@ -16,7 +15,7 @@ export function useNotification() {
 export default function NotificationProvider({ children }) {
     const [notification, setNotification] = useState(null);
 
-    const showNotification = useCallback(({ message, type = 'success', duration = 3000 }) => {
+    const showNotification = useCallback(({ message, type = 'success', duration = 3500 }) => {
         setNotification({ message, type });
         if (duration > 0) {
             setTimeout(() => setNotification(null), duration);
@@ -25,34 +24,83 @@ export default function NotificationProvider({ children }) {
 
     const closeNotification = () => setNotification(null);
 
+    const config = {
+        success: {
+            icon: <CheckCircle className="w-4 h-4 flex-shrink-0" />,
+            accent: 'border-l-emerald-500',
+            iconColor: 'text-emerald-400',
+            label: 'Success',
+            labelColor: 'text-emerald-400',
+        },
+        error: {
+            icon: <AlertCircle className="w-4 h-4 flex-shrink-0" />,
+            accent: 'border-l-red-500',
+            iconColor: 'text-red-400',
+            label: 'Error',
+            labelColor: 'text-red-400',
+        },
+        info: {
+            icon: <Info className="w-4 h-4 flex-shrink-0" />,
+            accent: 'border-l-blue-500',
+            iconColor: 'text-blue-400',
+            label: 'Info',
+            labelColor: 'text-blue-400',
+        },
+    };
+
+    const c = config[notification?.type] || config.success;
+
     return (
         <NotificationContext.Provider value={showNotification}>
             {children}
             {notification && (
-                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in">
-                    <div className={`
-                        flex items-center gap-3 px-4 py-2 rounded-full shadow-lg border text-sm
-                        ${notification.type === 'success'
-                            ? 'bg-green-600 border-green-500 text-white'
-                            : 'bg-red-600 border-red-500 text-white'
-                        }
-                        min-w-[280px] max-w-sm
-                    `}>
-                        {notification.type === 'success' ? (
-                            <CheckCircle className="w-5 h-5 flex-shrink-0" />
-                        ) : (
-                            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                        )}
-                        <span className="flex-1 font-medium">{notification.message}</span>
+                <div
+                    className="fixed top-5 left-1/2 z-50"
+                    style={{ transform: 'translateX(-50%)', animation: 'slideDown 0.3s cubic-bezier(0.34,1.56,0.64,1) both' }}
+                >
+                    <div
+                        className={`
+                            flex items-start gap-3 pl-4 pr-3 py-3 rounded-2xl shadow-2xl
+                            border border-white/10 border-l-2 ${c.accent}
+                            min-w-[280px] max-w-sm
+                        `}
+                        style={{
+                            background: 'rgba(18, 18, 22, 0.88)',
+                            backdropFilter: 'blur(20px)',
+                            WebkitBackdropFilter: 'blur(20px)',
+                        }}
+                    >
+                        {/* Icon */}
+                        <span className={`mt-0.5 ${c.iconColor}`}>{c.icon}</span>
+
+                        {/* Text */}
+                        <div className="flex-1 min-w-0">
+                            <p className={`text-[11px] font-semibold uppercase tracking-wider mb-0.5 ${c.labelColor}`}>
+                                {c.label}
+                            </p>
+                            <p className="text-sm text-white/90 leading-snug break-words">
+                                {notification.message}
+                            </p>
+                        </div>
+
+                        {/* Close */}
                         <button
                             onClick={closeNotification}
-                            className="hover:bg-white/20 rounded-full p-1 transition"
+                            className="mt-0.5 p-1 rounded-lg text-white/30 hover:text-white/70 hover:bg-white/10 transition-colors flex-shrink-0"
+                            aria-label="Dismiss"
                         >
-                            <X className="w-4 h-4" />
+                            <X className="w-3.5 h-3.5" />
                         </button>
                     </div>
                 </div>
             )}
+
+            <style>{`
+                @keyframes slideDown {
+                    from { opacity: 0; transform: translateY(-16px) scale(0.96); }
+                    to   { opacity: 1; transform: translateY(0)   scale(1);    }
+                }
+            `}</style>
         </NotificationContext.Provider>
     );
 }

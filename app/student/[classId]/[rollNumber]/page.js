@@ -104,6 +104,10 @@ export default function StudentDashboard() {
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const myReports = reportsResponse?.reports || [];
 
+  // Subject sort & filter
+  const [subjectSort, setSubjectSort] = useState('default'); // 'default' | 'asc' | 'desc'
+  const [subjectFilter, setSubjectFilter] = useState('all');  // 'all' | 'danger' | 'safe'
+
   const handleEditReportClick = (report) => {
     setEditingReportId(report._id);
     setReportDate(report.date || '');
@@ -169,6 +173,9 @@ export default function StudentDashboard() {
     localStorage.removeItem('studentRoll');
     localStorage.removeItem('studentClassName');
     localStorage.removeItem('studentToken');
+    // Clear calculator data (stored in sessionStorage for privacy)
+    sessionStorage.removeItem('shadow_calc_sgpa');
+    sessionStorage.removeItem('shadow_calc_cgpa');
     router.push('/');
   };
 
@@ -321,62 +328,171 @@ export default function StudentDashboard() {
         </div>
 
         {/* Subject-wise Attendance */}
-        <h2 className="text-sm uppercase text-[var(--text-dim)] mb-4">Subject-wise Attendance</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm uppercase text-[var(--text-dim)]">Subject-wise Attendance</h2>
+        </div>
+
+        {/* Premium Filter + Sort bar */}
+        {(data.subjects?.length || 0) > 1 && (
+          <div className="mb-5">
+            {/* Stats row */}
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-white/30 uppercase tracking-wider">
+                {(() => {
+                  const visible = (data.subjects || []).filter(s => {
+                    if (subjectFilter === 'danger') return s.percentage < minPercentage;
+                    if (subjectFilter === 'safe') return s.percentage >= minPercentage;
+                    return true;
+                  });
+                  return `${visible.length} of ${data.subjects?.length} subjects`;
+                })()}
+              </p>
+              {(subjectSort !== 'default' || subjectFilter !== 'all') && (
+                <button
+                  onClick={() => { setSubjectSort('default'); setSubjectFilter('all'); }}
+                  className="text-[10px] text-white/30 hover:text-white/70 transition"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            {/* Pill row */}
+            <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+
+              {/* Sort pills */}
+              <button
+                onClick={() => setSubjectSort(subjectSort === 'asc' ? 'default' : 'asc')}
+                className={`
+                  flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold
+                  whitespace-nowrap transition-all duration-200 border
+                  ${subjectSort === 'asc'
+                    ? 'bg-blue-500/15 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
+                    : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
+                  }
+                `}
+              >
+                <span>↑</span> Lowest
+              </button>
+              <button
+                onClick={() => setSubjectSort(subjectSort === 'desc' ? 'default' : 'desc')}
+                className={`
+                  flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold
+                  whitespace-nowrap transition-all duration-200 border
+                  ${subjectSort === 'desc'
+                    ? 'bg-blue-500/15 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
+                    : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
+                  }
+                `}
+              >
+                <span>↓</span> Highest
+              </button>
+
+              {/* Divider */}
+              <div className="flex-shrink-0 w-px bg-white/8 my-1" />
+
+              {/* Filter: At-risk */}
+              <button
+                onClick={() => setSubjectFilter(subjectFilter === 'danger' ? 'all' : 'danger')}
+                className={`
+                  flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold
+                  whitespace-nowrap transition-all duration-200 border
+                  ${subjectFilter === 'danger'
+                    ? 'bg-red-500/15 border-red-500/50 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.15)]'
+                    : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
+                  }
+                `}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${subjectFilter === 'danger' ? 'bg-red-400' : 'bg-white/20'}`} />
+                At Risk
+              </button>
+
+              {/* Filter: Safe */}
+              <button
+                onClick={() => setSubjectFilter(subjectFilter === 'safe' ? 'all' : 'safe')}
+                className={`
+                  flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold
+                  whitespace-nowrap transition-all duration-200 border
+                  ${subjectFilter === 'safe'
+                    ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
+                    : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
+                  }
+                `}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${subjectFilter === 'safe' ? 'bg-emerald-400' : 'bg-white/20'}`} />
+                Safe
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-4">
-          {data.subjects?.map((sub, idx) => {
-            const percentage = sub.percentage;
-            const isSafe = percentage >= minPercentage;
-            const bunkInfo = getBunkMessage(sub.attended, sub.total, percentage);
+          {(() => {
+            let subjects = [...(data.subjects || [])];
+            // Apply filter
+            if (subjectFilter === 'danger') subjects = subjects.filter(s => s.percentage < minPercentage);
+            if (subjectFilter === 'safe') subjects = subjects.filter(s => s.percentage >= minPercentage);
+            // Apply sort
+            if (subjectSort === 'asc') subjects.sort((a, b) => a.percentage - b.percentage);
+            if (subjectSort === 'desc') subjects.sort((a, b) => b.percentage - a.percentage);
 
-            return (
-              <div key={idx} className="card relative group hover:border-[var(--text-dim)] transition-colors cursor-pointer" onClick={() => fetchHistory(sub._id, sub.subjectName)}>
-                <div className="flex justify-between items-center mb-3">
-                  <h2 className="text-lg font-semibold">{sub.subjectName}</h2>
-                  <span className={`px-3 py-1 rounded-md text-sm font-semibold ${isSafe ? 'bg-[var(--success)] text-[var(--success-text)]' : 'bg-[var(--danger)] text-[var(--danger-text)]'
-                    }`}>
-                    {percentage.toFixed(1)}%
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-                  <div>
-                    <p className="text-[var(--text-dim)]">Classes Attended</p>
-                    <p className="text-2xl font-bold">{sub.attended}</p>
-                  </div>
-                  <div>
-                    <p className="text-[var(--text-dim)]">Total Classes</p>
-                    <p className="text-2xl font-bold">{sub.total}</p>
-                  </div>
-                </div>
-
-                <div className="mb-3">
-                  <div className="h-1.5 bg-[var(--bg)] rounded-full overflow-hidden relative">
-                    <div
-                      className="absolute top-0 bottom-0 w-0.5 bg-white/40 z-10"
-                      style={{ left: `${minPercentage}%` }}
-                    ></div>
-                    <div
-                      className={`h-full rounded-full transition-all ${bunkInfo.type === 'safe' ? 'bg-green-500' :
-                        bunkInfo.type === 'danger' ? 'bg-red-500' :
-                          'bg-orange-500'
-                        }`}
-                      style={{ width: `${Math.min(100, percentage)}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                <p className={`text-sm italic mb-1 ${bunkInfo.type === 'safe' ? 'text-green-400/80' :
-                  bunkInfo.type === 'danger' ? 'text-red-400/80' :
-                    'text-orange-400/80'
-                  }`}>
-                  {bunkInfo.text}
-                </p>
-                <p className="text-xs text-[var(--text-dim)] text-right mt-2 flex items-center justify-end gap-1 group-hover:text-white transition-colors">
-                  Tap for Details & Tasks →
-                </p>
-              </div>
+            if (subjects.length === 0) return (
+              <p className="text-center text-[var(--text-dim)] py-8">
+                No subjects match the current filter.
+              </p>
             );
-          }) || <p className="text-[var(--text-dim)] text-center">No subjects found</p>}
+
+            return subjects.map((sub, idx) => {
+              const percentage = sub.percentage;
+              const isSafe = percentage >= minPercentage;
+              const bunkInfo = getBunkMessage(sub.attended, sub.total, percentage);
+
+              return (
+                <div key={sub._id || idx} className="card relative group hover:border-[var(--text-dim)] transition-colors cursor-pointer" onClick={() => fetchHistory(sub._id, sub.subjectName)}>
+                  <div className="flex justify-between items-center mb-3">
+                    <h2 className="text-lg font-semibold">{sub.subjectName}</h2>
+                    <span className={`px-3 py-1 rounded-md text-sm font-semibold ${isSafe ? 'bg-[var(--success)] text-[var(--success-text)]' : 'bg-[var(--danger)] text-[var(--danger-text)]'
+                      }`}>
+                      {percentage.toFixed(1)}%
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                    <div>
+                      <p className="text-[var(--text-dim)]">Classes Attended</p>
+                      <p className="text-2xl font-bold">{sub.attended}</p>
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-dim)]">Total Classes</p>
+                      <p className="text-2xl font-bold">{sub.total}</p>
+                    </div>
+                  </div>
+
+                  <div className="mb-3">
+                    <div className="h-1.5 bg-[var(--bg)] rounded-full overflow-hidden relative">
+                      <div
+                        className="absolute top-0 bottom-0 w-0.5 bg-white/40 z-10"
+                        style={{ left: `${minPercentage}%` }}
+                      />
+                      <div
+                        className={`h-full rounded-full transition-all ${bunkInfo.type === 'safe' ? 'bg-green-500' :
+                          bunkInfo.type === 'danger' ? 'bg-red-500' : 'bg-orange-500'}`}
+                        style={{ width: `${Math.min(100, percentage)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <p className={`text-sm italic mb-1 ${bunkInfo.type === 'safe' ? 'text-green-400/80' :
+                    bunkInfo.type === 'danger' ? 'text-red-400/80' : 'text-orange-400/80'}`}>
+                    {bunkInfo.text}
+                  </p>
+                  <p className="text-xs text-[var(--text-dim)] text-right mt-2 flex items-center justify-end gap-1 group-hover:text-white transition-colors">
+                    Tap for Details &amp; Tasks →
+                  </p>
+                </div>
+              );
+            });
+          })()}
         </div>
 
         {/* Quick Navigate */}
@@ -409,60 +525,113 @@ export default function StudentDashboard() {
 
         {/* --- History & Works Modal --- */}
         {historyModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-            <div className="bg-[#0a0a0a] border border-[#333] w-full max-w-md rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
-
-              <div className="p-4 border-b border-[#333] flex justify-between items-center bg-[#0a0a0a]">
-                <h3 className="font-bold text-lg">{selectedSubject}</h3>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-fade-in">
+            <div
+              className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] border border-white/8"
+              style={{ background: 'rgba(12,12,14,0.95)' }}
+            >
+              {/* Header */}
+              <div className="px-5 py-4 border-b border-white/6 flex justify-between items-center flex-shrink-0">
+                <div>
+                  <h3 className="font-bold text-base leading-tight">{selectedSubject}</h3>
+                  <p className="text-xs text-white/30 mt-0.5">
+                    {modalTab === 'history' ? `${historyData.length} records` : `${subjectWorks.length} items`}
+                  </p>
+                </div>
                 <button
                   onClick={() => setHistoryModal(false)}
-                  className="text-[var(--text-dim)] hover:text-white text-xl leading-none"
+                  className="w-8 h-8 flex items-center justify-center rounded-xl text-white/30 hover:text-white hover:bg-white/8 transition-colors"
+                  aria-label="Close"
                 >
-                  &times;
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
 
-              {/* Modal Tabs */}
-              <div className="flex border-b border-[#333]">
-                <button
-                  onClick={() => setModalTab('history')}
-                  className={`flex-1 py-3 text-sm font-medium transition ${modalTab === 'history' ? 'bg-[#1a1a1a] text-white border-b-2 border-blue-500' : 'text-[var(--text-dim)] hover:bg-[#111]'}`}
-                >
-                  Attendance History
-                </button>
-                <button
-                  onClick={() => setModalTab('works')}
-                  className={`flex-1 py-3 text-sm font-medium transition ${modalTab === 'works' ? 'bg-[#1a1a1a] text-white border-b-2 border-blue-500' : 'text-[var(--text-dim)] hover:bg-[#111]'}`}
-                >
-                  Works & Tasks
-                </button>
+              {/* Pill Tabs */}
+              <div className="px-5 py-3 border-b border-white/6 flex gap-2 flex-shrink-0">
+                {[
+                  { id: 'history', label: 'Attendance' },
+                  { id: 'works', label: 'Works & Tasks' },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setModalTab(tab.id)}
+                    className={`
+                      px-4 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 border
+                      ${modalTab === tab.id
+                        ? 'bg-blue-500/15 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.12)]'
+                        : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
+                      }
+                    `}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
 
+              {/* Content */}
               <div className="overflow-y-auto p-4 flex-1">
 
                 {modalTab === 'history' && (
                   <>
                     {historyLoading ? (
-                      <div className="text-center py-8 text-[var(--text-dim)] animate-pulse">Loading records...</div>
+                      <div className="text-center py-10 text-white/30 text-sm animate-pulse">Loading records…</div>
                     ) : historyData.length === 0 ? (
-                      <div className="text-center py-8 text-[var(--text-dim)]">No classes recorded yet.</div>
+                      <div className="text-center py-10 text-white/30 text-sm">No classes recorded yet.</div>
                     ) : (
                       <div className="space-y-2">
-                        {historyData.map((record, i) => (
-                          <div key={i} className="flex justify-between items-center p-3 rounded bg-[#111] border border-[#222]">
-                            <span className="text-sm text-gray-300">
-                              {new Date(record.date).toLocaleDateString('en-US', {
-                                weekday: 'short', month: 'short', day: 'numeric'
-                              })}
-                            </span>
-                            <span className={`text-sm font-medium px-2 py-0.5 rounded ${record.status === 'Present'
-                              ? 'text-green-400 bg-green-400/10'
-                              : 'text-red-400 bg-red-400/10'
-                              }`}>
-                              {record.status}
-                            </span>
-                          </div>
-                        ))}
+                        {historyData.map((record, i) => {
+                          const isPresent = record.status === 'Present';
+                          // record.date is a MongoDB ISO Date → extract YYYY-MM-DD first
+                          const datePart = typeof record.date === 'string'
+                            ? record.date.slice(0, 10)
+                            : new Date(record.date).toISOString().slice(0, 10);
+                          return (
+                            <div
+                              key={i}
+                              className="flex justify-between items-center px-4 py-3 rounded-xl border border-white/6"
+                              style={{ background: 'rgba(255,255,255,0.03)' }}
+                            >
+                              <span className="text-sm text-white/80 font-medium">
+                                {new Date(datePart + 'T00:00:00').toLocaleDateString('en-US', {
+                                  weekday: 'short', month: 'short', day: 'numeric'
+                                })}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {!isPresent && (
+                                  <button
+                                    onClick={() => {
+                                      setHistoryModal(false);
+                                      // Pre-fill the report modal with this date + subject
+                                      setEditingReportId(null);
+                                      setReportDate(datePart);
+                                      const matchedSub = data?.subjects?.find(
+                                        s => s.subjectName === selectedSubject || s._id === selectedSubjectId
+                                      );
+                                      setReportSubjectId(matchedSub?._id || '');
+                                      setReportDescription('');
+                                      setReportModal(true);
+                                    }}
+                                    className="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
+                                  >
+                                    Report
+                                  </button>
+                                )}
+                                <span className={`
+                                  text-xs font-bold px-3 py-1 rounded-lg border
+                                  ${isPresent
+                                    ? 'bg-emerald-500/12 border-emerald-500/30 text-emerald-400'
+                                    : 'bg-red-500/12 border-red-500/30 text-red-400'
+                                  }
+                                `}>
+                                  {record.status}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </>
@@ -471,30 +640,42 @@ export default function StudentDashboard() {
                 {modalTab === 'works' && (
                   <div className="space-y-3">
                     {subjectWorks.length === 0 ? (
-                      <div className="text-center py-8 text-[var(--text-dim)]">
-                        <p>No assignments or notices for this subject.</p>
-                      </div>
+                      <div className="text-center py-10 text-white/30 text-sm">No assignments for this subject.</div>
                     ) : (
                       subjectWorks.map((work) => {
                         const status = getDeadlineStatus(work.dueDate);
                         return (
-                          <div key={work._id} className="card p-3 border border-[#333]">
-                            <div className="flex justify-between items-start mb-1">
-                              <h4 className="font-semibold text-sm">{work.title}</h4>
+                          <div
+                            key={work._id}
+                            className="rounded-xl border border-white/8 p-4"
+                            style={{ background: 'rgba(255,255,255,0.03)' }}
+                          >
+                            <div className="flex justify-between items-start mb-1.5">
+                              <h4 className="font-semibold text-sm leading-snug flex-1 pr-3">{work.title}</h4>
                               {status && (
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${status.type === 'danger' ? 'bg-red-900/40 text-red-400' :
-                                  status.type === 'urgent' ? 'bg-orange-900/40 text-orange-400' :
-                                    status.type === 'warning' ? 'bg-yellow-900/40 text-yellow-400' :
-                                      'bg-green-900/40 text-green-400'
-                                  }`}>
+                                <span className={`
+                                  flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-lg border
+                                  ${status.type === 'danger' ? 'bg-red-500/12 border-red-500/30 text-red-400' :
+                                    status.type === 'urgent' ? 'bg-orange-500/12 border-orange-500/30 text-orange-400' :
+                                      status.type === 'warning' ? 'bg-yellow-500/12 border-yellow-500/30 text-yellow-400' :
+                                        'bg-emerald-500/12 border-emerald-500/30 text-emerald-400'}
+                                `}>
                                   {status.text}
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-[var(--text-dim)] mb-2">{work.description}</p>
-                            <div className="flex justify-between items-center text-[10px] text-[var(--text-dim)] border-t border-[#222] pt-2">
-                              <span className="bg-[#222] px-2 py-0.5 rounded uppercase font-bold tracking-wider">{work.type}</span>
-                              <span>Posted {new Date(work.createdAt).toLocaleDateString()}</span>
+                            {work.description && (
+                              <p className="text-xs text-white/40 mb-3 leading-relaxed">{work.description}</p>
+                            )}
+                            <div className="flex justify-between items-center text-[10px] text-white/25 border-t border-white/6 pt-2.5 mt-1">
+                              <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/8 uppercase font-bold tracking-wider text-white/40">
+                                {work.type || 'task'}
+                              </span>
+                              <span>
+                                {new Date(work.createdAt + 'T00:00:00').toLocaleDateString('en-US', {
+                                  month: 'short', day: 'numeric'
+                                })}
+                              </span>
                             </div>
                           </div>
                         );
@@ -502,31 +683,42 @@ export default function StudentDashboard() {
                     )}
                   </div>
                 )}
-
               </div>
-
             </div>
           </div>
         )}
 
         {/* --- Report Issue Modal --- */}
         {reportModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-            <div className="bg-[#0a0a0a] border border-[#333] w-full max-w-md rounded-lg shadow-2xl overflow-hidden">
-
-              <div className="p-4 border-b border-[#333] flex justify-between items-center">
-                <h3 className="font-bold text-lg">Report Attendance Issue</h3>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-fade-in">
+            <div
+              className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-white/8"
+              style={{ background: 'rgba(12,12,14,0.95)' }}
+            >
+              <div className="px-5 py-4 border-b border-white/6 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-base">
+                    {editingReportId ? 'Edit Report' : 'Report Attendance Issue'}
+                  </h3>
+                  {reportDate && (
+                    <p className="text-xs text-white/30 mt-0.5">
+                      {new Date(reportDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </p>
+                  )}
+                </div>
                 <button
                   onClick={() => setReportModal(false)}
-                  className="text-[var(--text-dim)] hover:text-white text-xl leading-none"
+                  className="w-8 h-8 flex items-center justify-center rounded-xl text-white/30 hover:text-white hover:bg-white/8 transition-colors"
                 >
-                  &times;
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
 
-              <form onSubmit={submitReport} className="p-4 space-y-4">
+              <form onSubmit={submitReport} className="p-5 space-y-4">
                 <div>
-                  <label className="text-sm text-[var(--text-dim)] block mb-2">Date of Issue</label>
+                  <label className="text-xs font-semibold text-white/40 uppercase tracking-wider block mb-2">Date of Issue</label>
                   <input
                     type="date"
                     value={reportDate}
@@ -538,7 +730,7 @@ export default function StudentDashboard() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-[var(--text-dim)] block mb-2">Subject</label>
+                  <label className="text-xs font-semibold text-white/40 uppercase tracking-wider block mb-2">Subject</label>
                   <select
                     value={reportSubjectId}
                     onChange={(e) => setReportSubjectId(e.target.value)}
@@ -553,7 +745,7 @@ export default function StudentDashboard() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-[var(--text-dim)] block mb-2">Describe the Issue</label>
+                  <label className="text-xs font-semibold text-white/40 uppercase tracking-wider block mb-2">Describe the Issue</label>
                   <textarea
                     value={reportDescription}
                     onChange={(e) => setReportDescription(e.target.value)}
@@ -562,7 +754,7 @@ export default function StudentDashboard() {
                     maxLength={500}
                     required
                   />
-                  <p className="text-xs text-[var(--text-dim)] mt-1">{reportDescription.length}/500 characters</p>
+                  <p className="text-xs text-white/25 mt-1 text-right">{reportDescription.length}/500</p>
                 </div>
 
                 <button
@@ -570,68 +762,71 @@ export default function StudentDashboard() {
                   disabled={reportSubmitting}
                   className="btn btn-primary w-full"
                 >
-                  {reportSubmitting ? 'Submitting...' : 'Submit Report'}
+                  {reportSubmitting ? 'Submitting…' : editingReportId ? 'Update Report' : 'Submit Report'}
                 </button>
               </form>
             </div>
           </div>
         )}
 
-        {/* --- My Reports Section --- */}
+        {/* --- My Reports: Status Board --- */}
         {myReports.length > 0 && (
           <div className="mt-8">
-            <h2 className="text-sm uppercase text-[var(--text-dim)] mb-4">My Reports ({myReports.length})</h2>
+            <h2 className="text-sm uppercase text-white/30 font-semibold tracking-wider mb-4">
+              Report Status ({myReports.length})
+            </h2>
             <div className="space-y-3">
               {myReports.map((report) => (
-                <div key={report._id} className="card">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h3 className="font-semibold">{report.subjectName}</h3>
-                      <p className="text-sm text-[var(--text-dim)]">
-                        {new Date(report.date).toLocaleDateString('en-US', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        })}
-                      </p>
-                    </div>
-                    <span className={`px-3 py-1 rounded-md text-xs font-semibold ${report.status === 'resolved'
-                      ? 'bg-[var(--success)] text-[var(--success-text)]'
-                      : report.status === 'rejected'
-                        ? 'bg-[var(--danger)] text-[var(--danger-text)]'
-                        : 'bg-orange-900/20 text-orange-400'
-                      }`}>
+                <div
+                  key={report._id}
+                  className="rounded-xl border border-white/8 p-4"
+                  style={{ background: 'rgba(255,255,255,0.03)' }}
+                >
+                  {/* Top row: subject + status badge */}
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="font-semibold text-sm leading-tight">{report.subjectName}</h3>
+                    <span className={`
+                      flex-shrink-0 ml-3 text-[10px] font-bold px-2.5 py-1 rounded-lg border
+                      ${report.status === 'resolved'
+                        ? 'bg-emerald-500/12 border-emerald-500/30 text-emerald-400'
+                        : report.status === 'rejected'
+                          ? 'bg-red-500/12 border-red-500/30 text-red-400'
+                          : 'bg-amber-500/12 border-amber-500/30 text-amber-400'
+                      }
+                    `}>
                       {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
                     </span>
                   </div>
-                  <p className="text-sm text-[var(--text-dim)] mb-2">{report.issueDescription}</p>
+
+                  {/* Date */}
+                  <p className="text-xs text-white/30 mb-2">
+                    {new Date(report.date + 'T00:00:00').toLocaleDateString('en-US', {
+                      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
+                    })}
+                  </p>
+
+                  {/* Issue description */}
+                  <p className="text-xs text-white/50 leading-relaxed mb-3">{report.issueDescription}</p>
+
+                  {/* Admin response if any */}
                   {report.adminResponse && (
-                    <div className="mt-2 p-2 bg-blue-900/10 border border-blue-500/30 rounded">
-                      <p className="text-xs text-blue-400 font-semibold mb-1">Admin Response:</p>
-                      <p className="text-sm text-[var(--text-dim)]">{report.adminResponse}</p>
+                    <div className="mt-2 px-3 py-2.5 rounded-xl border border-blue-500/20 bg-blue-500/8">
+                      <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1">Admin Response</p>
+                      <p className="text-xs text-white/60 leading-relaxed">{report.adminResponse}</p>
                     </div>
                   )}
 
-                  <div className="mt-3 flex justify-end gap-2">
-                    {report.status === 'pending' && (
-                      <button
-                        onClick={() => handleEditReportClick(report)}
-                        className="text-xs flex items-center gap-1 px-2 py-1 rounded text-[var(--text-dim)] hover:text-blue-400 hover:bg-blue-500/10 transition"
-                      >
-                        Edit Report
-                      </button>
-                    )}
-
-                    {report.status !== 'pending' && (
+                  {/* Delete after resolved/rejected */}
+                  {report.status !== 'pending' && (
+                    <div className="mt-3 flex justify-end">
                       <button
                         onClick={() => handleDeleteReport(report._id)}
-                        className="text-xs flex items-center gap-1 px-2 py-1 rounded text-[var(--text-dim)] hover:text-red-400 hover:bg-red-500/10 transition"
+                        className="text-[10px] text-white/20 hover:text-red-400 hover:bg-red-500/10 px-2 py-1 rounded-lg border border-transparent hover:border-red-500/20 transition-colors"
                       >
-                        Delete Report
+                        Dismiss
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

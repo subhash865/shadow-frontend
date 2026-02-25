@@ -41,6 +41,11 @@ export default function SubjectManager() {
     const handleLogout = () => {
         localStorage.removeItem('adminClassId');
         localStorage.removeItem('token');
+        // Clear student keys too (in case user had a student session in same browser)
+        localStorage.removeItem('studentClassId');
+        localStorage.removeItem('studentRoll');
+        localStorage.removeItem('studentClassName');
+        localStorage.removeItem('studentToken');
         router.push('/');
     };
 

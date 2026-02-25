@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, X, Edit2, Trash2 } from 'lucide-react';
 import Navbar from '@/app/components/Navbar';
@@ -46,7 +46,7 @@ export default function AdminAttention() {
         loadAnnouncements(storedClassId);
     }, [router]);
 
-    const loadAnnouncements = (cId) => {
+    const loadAnnouncements = useCallback((cId) => {
         api.get(`/announcements/${cId}`)
             .then(res => {
                 setAnnouncements(res.data.announcements || []);
@@ -55,11 +55,16 @@ export default function AdminAttention() {
             .catch(() => {
                 setLoading(false);
             });
-    };
+    }, []);
 
     const handleLogout = () => {
         localStorage.removeItem('adminClassId');
         localStorage.removeItem('token');
+        // Clear student keys too (in case user had a student session in same browser)
+        localStorage.removeItem('studentClassId');
+        localStorage.removeItem('studentRoll');
+        localStorage.removeItem('studentClassName');
+        localStorage.removeItem('studentToken');
         router.push('/');
     };
 
@@ -81,13 +86,17 @@ export default function AdminAttention() {
     };
 
     const handleEdit = (announcement) => {
-        const matchedSubject = subjects.find(s => s._id === announcement.subjectId || s.name === announcement.subjectName);
-        setEditingAnnouncementId(announcement._id);
-        setFormTitle(announcement.title || '');
-        setFormDescription(announcement.description || '');
-        setFormSubjectId(matchedSubject?._id || '');
-        setFormDueDate(announcement.dueDate ? new Date(announcement.dueDate).toISOString().split('T')[0] : '');
-        setShowForm(true);
+        // Scroll first so the animation plays cleanly, then populate + show the form
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setTimeout(() => {
+            const matchedSubject = subjects.find(s => s._id === announcement.subjectId || s.name === announcement.subjectName);
+            setEditingAnnouncementId(announcement._id);
+            setFormTitle(announcement.title || '');
+            setFormDescription(announcement.description || '');
+            setFormSubjectId(matchedSubject?._id || '');
+            setFormDueDate(announcement.dueDate ? new Date(announcement.dueDate).toISOString().split('T')[0] : '');
+            setShowForm(true);
+        }, 300);
     };
 
     const handleSubmit = async (e) => {
