@@ -148,7 +148,7 @@ export default function BunkEffect() {
         <>
             <Navbar isStudent={true} onLogout={handleLogout} classId={classId} rollNumber={rollNumber} />
 
-            <div className="max-w-3xl mx-auto px-4 py-8">
+            <div className="max-w-3xl mx-auto px-4 py-8 pb-24">
 
                 <div className="mb-6">
                     <h1 className="text-2xl font-bold">Skip Effect Calculator</h1>

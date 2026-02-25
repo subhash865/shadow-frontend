@@ -59,8 +59,8 @@ export function ConfirmProvider({ children }) {
                             <button
                                 onClick={handleConfirm}
                                 className={`flex-1 py-3.5 text-sm font-bold transition ${isDanger
-                                        ? 'text-red-400 hover:bg-red-500/10'
-                                        : 'text-blue-400 hover:bg-blue-500/10'
+                                    ? 'text-red-400 hover:bg-red-500/10'
+                                    : 'text-blue-400 hover:bg-blue-500/10'
                                     }`}
                             >
                                 {state.confirmText}
@@ -74,17 +74,24 @@ export function ConfirmProvider({ children }) {
 }
 
 export function useConfirm() {
-    return useCallback((title, message, options = {}) => {
+    return useCallback((titleOrOptions, message, options = {}) => {
+        let config = {};
+        if (typeof titleOrOptions === 'object' && titleOrOptions !== null) {
+            config = titleOrOptions;
+        } else {
+            config = { title: titleOrOptions, message, ...options };
+        }
+
         if (!globalShowConfirm) {
             // Fallback to native confirm if provider not mounted
-            return Promise.resolve(window.confirm(message || title));
+            return Promise.resolve(window.confirm(config.message || config.title));
         }
         return globalShowConfirm({
-            title,
-            message,
-            confirmText: options.confirmText,
-            cancelText: options.cancelText,
-            type: options.type
+            title: config.title,
+            message: config.message,
+            confirmText: config.confirmText,
+            cancelText: config.cancelText,
+            type: config.type || config.confirmColor
         });
     }, []);
 }

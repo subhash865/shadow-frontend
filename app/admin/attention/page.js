@@ -185,7 +185,7 @@ export default function AdminAttention() {
         <>
             <Navbar isAdmin={true} onLogout={handleLogout} classId={classId} />
 
-            <div className="max-w-3xl mx-auto px-4 py-6">
+            <div className="max-w-3xl mx-auto px-4 py-6 pb-24">
 
                 {/* Header */}
                 <div className="flex justify-between items-start mb-6">

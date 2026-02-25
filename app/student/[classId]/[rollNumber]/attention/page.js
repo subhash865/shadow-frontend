@@ -12,8 +12,9 @@ export default function StudentAttention() {
     const { classId, rollNumber } = params;
     const router = useRouter();
     const [filterSubject, setFilterSubject] = useState('all');
-    const [filterUrgency, setFilterUrgency] = useState('all'); // 'all' or 'urgent'
-    const [selectedDate, setSelectedDate] = useState(null); // YYYY-MM-DD
+    const [filterUrgency, setFilterUrgency] = useState('all');
+    const [selectedDate, setSelectedDate] = useState(null);
+    const [hasNewAnnouncements, setHasNewAnnouncements] = useState(false);
     const fetcher = (url) => api.get(url).then((res) => res.data);
     const reportKey = classId && rollNumber ? `/student/report/${classId}/${rollNumber}` : null;
     const announcementsKey = classId ? `/announcements/${classId}` : null;
@@ -160,6 +161,33 @@ export default function StudentAttention() {
         setMounted(true);
     }, []);
 
+    // ── New-announcement detector ─────────────────────────────────────────
+    const seenKey = classId ? `attn_seen_${classId}_${rollNumber}` : null;
+
+    useEffect(() => {
+        if (!seenKey || announcements.length === 0) return;
+        try {
+            const stored = JSON.parse(localStorage.getItem(seenKey) || 'null');
+            const latest = announcements
+                .map(a => new Date(a.createdAt).getTime())
+                .sort((a, b) => b - a)[0];
+
+            if (!stored || stored.latest !== latest || stored.count !== announcements.length) {
+                setHasNewAnnouncements(true);
+            }
+        } catch { /* ignore */ }
+    }, [announcements, seenKey]);
+
+    // Mark as seen when user lands on this page
+    useEffect(() => {
+        if (!seenKey || announcements.length === 0) return;
+        const latest = announcements
+            .map(a => new Date(a.createdAt).getTime())
+            .sort((a, b) => b - a)[0];
+        localStorage.setItem(seenKey, JSON.stringify({ count: announcements.length, latest }));
+        setHasNewAnnouncements(false);
+    }, [seenKey, announcements.length]);
+
     if (!mounted || loading) return <div className="flex h-screen items-center justify-center text-white animate-pulse">Loading...</div>;
 
     const renderCard = (announcement) => {
@@ -200,8 +228,12 @@ export default function StudentAttention() {
 
                         {/* Due date display */}
                         {announcement.dueDate && (
-                            <p className="text-xs text-[var(--text-dim)] mt-2">
-                                📅 {new Date(announcement.dueDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                            <p className="flex items-center gap-1.5 text-xs text-[var(--text-dim)] mt-2">
+                                <svg className="w-3 h-3 flex-shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                                    <path d="M16 2v4M8 2v4M3 10h18" />
+                                </svg>
+                                {new Date(announcement.dueDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                             </p>
                         )}
                     </div>
@@ -219,9 +251,11 @@ export default function StudentAttention() {
 
     return (
         <>
-            <Navbar isStudent={true} onLogout={handleLogout} classId={classId} rollNumber={rollNumber} />
+            <Navbar isStudent={true} onLogout={handleLogout} classId={classId} rollNumber={rollNumber}
+                hasNewAnnouncements={hasNewAnnouncements}
+            />
 
-            <div className="max-w-3xl mx-auto px-4 py-8">
+            <div className="max-w-3xl mx-auto px-4 py-8 pb-24">
 
                 {/* Header */}
                 <div className="mb-6">
@@ -247,17 +281,16 @@ export default function StudentAttention() {
                     {selectedDate && (
                         <button
                             onClick={() => setSelectedDate(null)}
-                            className="mt-2 text-xs text-blue-400 hover:text-white transition flex items-center gap-1"
+                            className="mt-2 text-xs text-white/40 hover:text-white transition flex items-center gap-1"
                         >
                             <span>✕</span> Clear date filter
                         </button>
                     )}
                 </div>
 
-                {/* Premium Filter Bar */}
+                {/* Compact Filter Row: Dropdown + Urgent toggle */}
                 {filterOptions.length > 0 && (
                     <div className="mb-6">
-                        {/* Stats row */}
                         <div className="flex items-center justify-between mb-3">
                             <p className="text-xs font-semibold text-white/30 uppercase tracking-wider">
                                 {filtered.length} {filtered.length === 1 ? 'task' : 'tasks'}
@@ -273,60 +306,50 @@ export default function StudentAttention() {
                             )}
                         </div>
 
-                        {/* Filter pills */}
-                        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar scroll-smooth">
+                        <div className="flex items-center gap-2">
+                            {/* Subject dropdown */}
+                            <div className="relative flex-1">
+                                <select
+                                    value={filterSubject}
+                                    onChange={(e) => setFilterSubject(e.target.value)}
+                                    className={`
+                                        w-full appearance-none px-3 py-2 pr-8 rounded-xl text-xs font-semibold border
+                                        bg-transparent transition-all duration-200 cursor-pointer outline-none
+                                        ${filterSubject !== 'all'
+                                            ? 'border-blue-500/50 text-blue-400 bg-blue-500/8'
+                                            : 'border-white/10 text-white/50 hover:border-white/20'
+                                        }
+                                    `}
+                                    style={{ colorScheme: 'dark' }}
+                                >
+                                    <option className="bg-white text-black" value="all">All Subjects</option>
+                                    {filterOptions.map(sub => (
+                                        <option className="bg-white text-black" key={sub} value={sub}>{sub}</option>
+                                    ))}
+                                </select>
+                                {/* custom chevron */}
+                                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-white/30">
+                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                        <path d="M6 9l6 6 6-6" />
+                                    </svg>
+                                </div>
+                            </div>
 
-                            {/* Urgent toggle — special red style */}
+                            {/* Urgent toggle pill */}
                             <button
                                 onClick={() => setFilterUrgency(filterUrgency === 'urgent' ? 'all' : 'urgent')}
                                 className={`
-                                    flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold
-                                    whitespace-nowrap transition-all duration-200 border
+                                    flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
+                                    transition-all duration-200 border
                                     ${filterUrgency === 'urgent'
                                         ? 'bg-red-500/15 border-red-500/50 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.15)]'
-                                        : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
+                                        : 'bg-transparent border-white/10 text-white/40 hover:border-white/20 hover:text-white/70'
                                     }
                                 `}
                             >
                                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${filterUrgency === 'urgent' ? 'bg-red-400' : 'bg-white/20'}`} />
                                 Urgent
                             </button>
-
-                            {/* Divider */}
-                            <div className="flex-shrink-0 w-px bg-white/8 my-1" />
-
-                            {/* All Subjects */}
-                            <button
-                                onClick={() => setFilterSubject('all')}
-                                className={`
-                                    flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold
-                                    whitespace-nowrap transition-all duration-200 border
-                                    ${filterSubject === 'all'
-                                        ? 'bg-blue-500/15 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
-                                        : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
-                                    }
-                                `}
-                            >
-                                All
-                            </button>
-
-                            {/* Subject pills */}
-                            {filterOptions.map(sub => (
-                                <button
-                                    key={sub}
-                                    onClick={() => setFilterSubject(sub === filterSubject ? 'all' : sub)}
-                                    className={`
-                                        flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold
-                                        whitespace-nowrap transition-all duration-200 border
-                                        ${filterSubject === sub
-                                            ? 'bg-blue-500/15 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
-                                            : 'bg-transparent border-white/8 text-white/40 hover:border-white/20 hover:text-white/70'
-                                        }
-                                    `}
-                                >
-                                    {sub}
-                                </button>
-                            ))}
                         </div>
                     </div>
                 )}
