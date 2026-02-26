@@ -47,10 +47,10 @@ function GoalBadge({ value }) {
     if (value >= 10) { label = 'Outstanding!'; cls = 'from-yellow-500/20 to-orange-500/10 border-yellow-500/30 text-yellow-300'; }
     else if (value >= 9.5) { label = 'Excellent!'; cls = 'from-green-500/20  to-emerald-500/10 border-green-500/30  text-green-300'; }
     else if (value >= 9) { label = 'Very Good!'; cls = 'from-blue-500/20   to-sky-500/10     border-blue-500/30   text-blue-300'; }
-    else if (value >= 8) { label = 'Above Average'; cls = 'from-indigo-500/20 to-violet-500/10  border-indigo-500/30 text-indigo-300'; }
-    else if (value >= 7) { label = 'Average'; cls = 'from-orange-500/20 to-amber-500/10  border-orange-500/30 text-orange-300'; }
-    else if (value > 6) { label = 'Needs Work'; cls = 'from-red-500/20    to-rose-500/10    border-red-500/30    text-red-300'; }
-    else if (value > 5) { label = 'Needs Work'; cls = 'from-red-500/20    to-rose-500/10    border-red-500/30    text-red-300'; }
+    else if (value >= 8) { label = 'Good'; cls = 'from-indigo-500/20 to-violet-500/10  border-indigo-500/30 text-indigo-300'; }
+    else if (value >= 7) { label = 'Above Average'; cls = 'from-orange-500/20 to-amber-500/10  border-orange-500/30 text-orange-300'; }
+    else if (value > 6) { label = 'Average'; cls = 'from-red-500/20    to-rose-500/10    border-red-500/30    text-red-300'; }
+    else if (value > 5) { label = 'Pass'; cls = 'from-red-500/20    to-rose-500/10    border-red-500/30    text-red-300'; }
 
     else { label = 'Fail'; cls = 'from-red-600/20    to-rose-600/10    border-red-600/30    text-red-400'; }
     return (
@@ -218,7 +218,7 @@ function SgpaTab({ rows, setRows, sgpa }) {
                             Total credits: {rows.reduce((s, r) => s + r.credits, 0)}
                         </p>
                         <p className="text-[10px] text-gray-500 mt-1.5 opacity-80">
-                            *Note: This is an ideal case; actual SGPA may vary by +1 or -1 grades.
+                            *Note: The minimum marks required for each grade may vary depending on the subject’s average performance. This calculation represents an ideal case.
                         </p>
                     </div>
                 )}
