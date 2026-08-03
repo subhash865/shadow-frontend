@@ -9,9 +9,9 @@
 A modular academic management platform built to handle high-concurrency student data requests reliably at scale, with AI-generated performance insights for both students and faculty.
 
 ## 🚀 Live Demo
-[https://shadowmark.vercel.app](#) — replace with your actual deployed URL
+[https://shadowmark.vercel.app](#)
+<img width="1280" height="633" alt="Screenshot 2026-08-03 at 4 05 52 PM" src="https://github.com/user-attachments/assets/3bfa162c-5005-4341-975a-b3edb05a58ab" />
 
-![Demo Screenshot](#) <!-- drop a screenshot of the dashboard here -->
 
 ## ✨ Key Features
 - **Modular backend architecture** on Next.js 15 + Express, built to handle high-concurrency academic data requests
@@ -39,17 +39,3 @@ Create a `.env.local`:
 
 ```
 MONGODB_URI=your_mongo_uri
-GOOGLE_GENAI_API_KEY=your_google_ai_key
-```
-
-Run locally:
-
-```bash
-npm run dev
-```
-
-## 🤝 My Contribution
-Built the backend architecture and database indexing strategy; integrated Google Generative AI for the automated insights/reporting module.
-
-## 📄 License
-MIT
